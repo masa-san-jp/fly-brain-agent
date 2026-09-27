@@ -119,6 +119,8 @@ async function main() {
   if (PRESET.autoThreat) setInterval(() => { if (!running || !flies.length) return; const live = flies.filter(f => f.last?.alive !== false); if (!live.length) return; selected = live[Math.floor(Math.random() * live.length)].id; launchThreat(); }, PRESET.autoThreat * 1000);
   window.__arena = { camera, controls, flies, env, THREE, renderer, scene, gtao, composer, metrics, resolution, batches, visual, humanoidRenderer, addFly, rebuildEnv, FLY_CAP, MAX_FLIES, HUMANOID_MODE };
   animate();
+  // The humanoid page is a showcase: start the simulation without a click.
+  if (HUMANOID_MODE && !running) $('#play').click();
 }
 
 // ---------------- scene ----------------
