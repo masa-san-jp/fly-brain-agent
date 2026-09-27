@@ -1,6 +1,8 @@
 // Builds the MuJoCo world for one fly: the flybody fly (mesh-free physics), a walled arena with
 // obstacles and food discs, and kinematic (mocap) proxies standing in for the other flies.
 // Units follow flybody: cm, g, s. The floor is z = 0; a standing fly's thorax sits at z ~ 0.13.
+import { expandAgents } from '../agents/terminals.js';
+
 export const DEFAULT_ENV = {
   arena: { radius: 2.5, wallHeight: 1.2, segments: 48, wallFriction: 1 },    // head/body grip walls; legs slide along them (see buildWorldXML); tall enough to fly in
   food: [
@@ -15,6 +17,18 @@ export const DEFAULT_ENV = {
   threat: null,   // { x, y, z } position of the looming object (set by the host), or null
 };
 
+const AGENT_TERMINALS = [
+  { id: 'ollama', backend: 'ollama', x: -0.8, y: 0.7, r: 0.22,
+    odor: 'banana', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 8000 },
+  { id: 'claude', backend: 'claude-code', x: 0.9, y: -0.7, r: 0.22,
+    odor: 'vinegar', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 60000 },
+];
+
+function agentEnv() {
+  return expandAgents({ ...structuredClone(DEFAULT_ENV), food: [], odors: [], bitterPatches: [],
+    obstacles: [], hazards: [], agents: structuredClone(AGENT_TERMINALS) });
+}
+
 // Environment presets ("different environments to play and survive in")
 export const PRESETS = {
   foraging: { label: 'Foraging arena', env: () => structuredClone(DEFAULT_ENV), flies: 1 },
@@ -26,6 +40,7 @@ export const PRESETS = {
     obstacles: [{ type: 'box', x: -0.9, y: 0.5, sx: 0.08, sy: 1.1, sz: 0.3 }, { type: 'box', x: 0.2, y: -0.6, sx: 0.08, sy: 1.1, sz: 0.3 }, { type: 'box', x: 1.1, y: 0.7, sx: 0.08, sy: 0.9, sz: 0.3 }],
     food: [{ x: 1.8, y: -0.6, r: 0.25, sugar: 1, bitter: 0, water: 0.2, amount: 5 }], odors: [{ x: 1.8, y: -0.6, odor: 'vinegar', strength: 1, sigma: 1.0 }] }) },
   social: { label: 'Social: five flies, one food patch', flies: 5, env: () => ({ ...structuredClone(DEFAULT_ENV), obstacles: [], hazards: [] }) },
+  agents: { label: 'Agent terminals: two odor-guided kiosks', flies: 1, start: [0, 0, 0], env: agentEnv },
   courtship: { label: 'Courtship: a male and a female', env: () => ({ ...structuredClone(DEFAULT_ENV), obstacles: [], hazards: [], bitterPatches: [], food: [], odors: [] }),
     flySpots: [{ pos: [-0.6, 0], yaw: 0, sex: 'm' }, { pos: [0.4, 0.3], yaw: 2.4, sex: 'f' }] },
 };

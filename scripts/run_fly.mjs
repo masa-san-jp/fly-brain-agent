@@ -19,6 +19,8 @@ if (scenario === 'nearodor') { pos = [0, 0.6]; yaw = 0; }                       
 if (scenario === 'onheat') { pos = [env.hazards[0].x, env.hazards[0].y]; }
 const calib = fs.existsSync('public/data/brain_params.json') ? JSON.parse(fs.readFileSync('public/data/brain_params.json')) : { wSyn: 0.4 };
 const brainOpts = { ...calib, ...X.brain };
+if (scenario === 'escape') brainOpts.scaffolds = { ...(brainOpts.scaffolds || {}), escapeGate: false };
+const humanoidMode = brainOpts.humanoidMode === true;
 const useFV = X.flyvis ?? true;
 let vision = null;
 if (useFV) { const fb = fs.readFileSync('public/vision/flyvis.bin'); vision = { model: parseFlyVis(fb.buffer.slice(fb.byteOffset, fb.byteOffset + fb.byteLength), JSON.parse(fs.readFileSync('public/vision/flyvis.json')), JSON.parse(fs.readFileSync('public/vision/flyvis_inputs.json'))), map: JSON.parse(fs.readFileSync('public/vision/flyvis_map.json')) }; }
@@ -33,11 +35,14 @@ for (let s = 1; s <= steps; s++) {
     if (s === t0) { const st0 = fly.state(); const yaw0 = Math.atan2(fly.mjd.xmat[fly.bid.thorax * 9 + 3], fly.mjd.xmat[fly.bid.thorax * 9]); globalThis.TH = { p: st0.pos, a: yaw0 + 0.6 }; }
     const u = Math.min(1, Math.max(0, (s - t0) / dur)), k = u * u, H = globalThis.TH;
     if (H && s < t0 + dur + 600) env.threat = { x: H.p[0] + Math.cos(H.a) * (3 * (1 - k) + 0.3 * k), y: H.p[1] + Math.sin(H.a) * (3 * (1 - k) + 0.3 * k), z: 1.6 * (1 - k) + 0.45 * k }; else env.threat = null; }
+  if (scenario === 'escape' && s >= 2000 && s < 2050) fly.motor.gfTimes = [s - 1, s - 2, s - 3, s - 4];
   fly.step();
+  if (humanoidMode && fly.flight.active) throw new Error(`humanoidMode entered flight at ${s} ms`);
   if (s % (scenario === 'threat' ? 50 : 100) === 0) {
     const st = fly.state(); let act = 0; for (let i = 0; i < D.N; i++) if (fly.brain.spikeCount[i] !== prev[i]) act++; prev.set(fly.brain.spikeCount);
     const c = fly.cmd; const yawNow = Math.atan2(fly.mjd.xmat[fly.bid.thorax * 9 + 3], fly.mjd.xmat[fly.bid.thorax * 9]) * 180 / Math.PI;
     const up = fly.mjd.xmat[fly.bid.thorax * 9 + 8]; console.log(`t=${(s / 1000).toFixed(1)}s [${fly.behavior(st)}] up ${up.toFixed(2)} pos ${st.pos.map(v => v.toFixed(2)).join(',')} yaw ${yawNow.toFixed(0)} | active ${act} | DN fwd ${c.drive.toFixed(0)} back ${c.back.toFixed(0)} turn ${c.turn.toFixed(2)} v ${c.v.toFixed(2)} GF ${c.escape.toFixed(0)} TO ${(c.takeoff || 0).toFixed(0)} | MN9 ${fly.motor.mean(D.byType('MN9')).toFixed(0)} rostrum ${fly.mjd.ctrl[fly.motor.act.rostrum].toFixed(2)} | energy ${fly.energy.toFixed(3)} eaten ${fly.eaten.toFixed(4)} health ${fly.health.toFixed(2)} | sensory ${fly.driven.length}`);
   }
 }
+if (humanoidMode && scenario === 'escape' && fly.jumps < 1) throw new Error('humanoid escape check did not observe an escape jump');
 console.log(`wall ${(Date.now() - t0) / 1000}s for ${secs}s sim (${((Date.now() - t0) / 1000 / secs).toFixed(2)}x real-time)`);

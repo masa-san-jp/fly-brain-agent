@@ -1,0 +1,14 @@
+[
+  { "id": 0, "t": 0, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.5, "alive": true, "flying": false, "behavior": "standing", "cmd": { "v": 0, "grooming": false } },
+  { "id": 0, "t": 100, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.5, "alive": true, "flying": false, "behavior": "walking", "cmd": { "v": 0.2, "grooming": false } },
+  { "id": 0, "t": 200, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.5, "alive": true, "flying": false, "behavior": "escape jump", "cmd": { "v": 0.2, "grooming": false } },
+  { "id": 0, "t": 300, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "walking", "cmd": { "v": 0.2, "grooming": false } },
+  { "id": 0, "t": 400, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "feeding", "cmd": { "v": 0, "grooming": false } },
+  { "id": 0, "t": 500, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "grooming", "cmd": { "v": 0, "grooming": true } },
+  { "id": 0, "t": 2000, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "grooming", "cmd": { "v": 0, "grooming": true } },
+  { "id": 0, "t": 3000, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "standing", "cmd": { "v": 0, "grooming": false } },
+  { "id": 0, "t": 13000, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": true, "flying": false, "behavior": "proboscis extended", "cmd": { "v": 0.01, "grooming": false } },
+  { "id": 0, "t": 14000, "pos": [2, 2, 0.13], "yaw": 0, "energy": 0.29, "alive": false, "flying": false, "behavior": "dead", "cmd": { "v": 0, "grooming": false } },
+  { "id": 0, "t": 15000, "pos": [1, 1, 0.13], "yaw": 0, "energy": 0.29, "alive": false, "flying": false, "behavior": "dead", "cmd": { "v": 0, "grooming": false } },
+  { "id": 0, "t": 15300, "pos": [1, 1, 0.13], "yaw": 0, "energy": 0.29, "alive": false, "flying": false, "behavior": "dead", "cmd": { "v": 0, "grooming": false } }
+]

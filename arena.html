@@ -10,6 +10,7 @@
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="agentBubble" hidden role="status"></div>
 <aside id="brainpanel" hidden>
   <header><h2 id="bpTitle">Inside fly 0</h2><span class="lr"><i class="l"></i>left <i class="r"></i>right</span><button id="bpFold" class="fold" title="Hide brain panel (])" aria-expanded="true">›</button></header>
   <div id="bpBody">
@@ -52,6 +53,12 @@
     <div class="row"><button id="threat">Looming threat → selected fly</button><button id="takeoff" title="Excite the selected fly's takeoff descending neurons (DNp02, DNp04), as optogenetic activation would">Activate takeoff DNs</button></div>
     <div class="row"><label>wind <input id="wind" type="range" min="0" max="30" step="1" value="0"> <span id="windv">0</span> cm/s</label>
     <label>light <input id="light" type="range" min="0.05" max="1.5" step="0.05" value="1"></label></div>
+  </section>
+  <section id="agentPanel" hidden>
+    <h2>Agent bridge</h2>
+    <div id="agentBridgeStatus" class="note">bridge: disabled</div>
+    <div id="agentTerminals"></div>
+    <div class="note">Synthetic buttons are debug-only and use the same detector → bridge path.</div>
   </section>
   <section>
     <h2>Scaffolds</h2>

@@ -1,0 +1,9 @@
+{
+  "touched_agent": "ollama",
+  "startled": "ollama",
+  "hungry": "ollama",
+  "found_food": "ollama",
+  "grooming": "ollama",
+  "idle_long": "ollama",
+  "died": "ollama"
+}

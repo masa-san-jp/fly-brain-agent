@@ -14,6 +14,7 @@ import { allocBrainMemory, MAX_FLIES } from './brainsetup.js';
 import { parseFlyVis } from './flyvis.js';
 import { buildGroups } from './sim/groups.js';
 import { SCAFFOLD_IDS, createScaffoldSet } from './sim/scaffold/index.js';
+import { AgentBridge, loadAgentBridgeRules } from './agents/AgentBridge.js';
 const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pages
 
 const $ = s => document.querySelector(s);
@@ -37,14 +38,25 @@ const FLY_CAP = Math.min(MAX_FLIES, Math.max(1, Math.floor(Number(new URLSearchP
 // taste and touch alone. This is a behavioural change, not just an optimisation.
 // Accepts the usual spellings of "off" so ?vision=false doesn't silently leave vision on.
 const NO_VISION = ['0', 'false', 'off', 'no'].includes((new URLSearchParams(location.search).get('vision') || '').toLowerCase());
+// Humanoid presentation is strictly opt-in. The legacy arena path does not
+// import or instantiate any VRM code unless ?avatar=vrm is present.
+const HUMANOID_MODE = new URLSearchParams(location.search).get('avatar') === 'vrm';
+const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') ||
+  (presetKey === 'agents' && HUMANOID_MODE ? 'ws://127.0.0.1:8787' : null);
+const DEBUG_TOUCH = new URLSearchParams(location.search).get('touch') === 'debug';
 const env = PRESET.env();
 const flies = [];          // {id, worker, group, bodies[], last, color, ready}
-let flyvisMap, shared, meta, bodymap, flyXML, gait, visual, batches, outputPass, running = false, selected = 0, tool = 'none', speed = 2, brainMem, wasmModule, brainParams, neuromodCalib;
+let flyvisMap, shared, meta, bodymap, flyXML, gait, visual, batches, humanoidRenderer, HumanoidRendererClass, agentBridge, outputPass, running = false, selected = 0, tool = 'none', speed = 2, brainMem, wasmModule, brainParams, neuromodCalib;
+const terminalStates = new Map();
+const terminalMeshes = new Map();
+const terminalEffects = new Map();
+let activeBubble = null;
 
 function toShared(ta) { const sab = new SharedArrayBuffer(ta.byteLength); const out = new ta.constructor(sab); out.set(ta); return out; }
 
 async function main() {
   if (!crossOriginIsolated) console.warn('not cross-origin isolated: SharedArrayBuffer unavailable');
+  if (HUMANOID_MODE) ({ HumanoidRenderer: HumanoidRendererClass } = await import('./humanoid/HumanoidRenderer.js'));
   const data = await loadConnectome(status);
   meta = data.meta;
   status('loading body model');
@@ -64,6 +76,7 @@ async function main() {
   shared = { N: data.N, E: data.E, indptr: toShared(data.indptr), indices: toShared(data.indices), weights: toShared(data.weights), nt: toShared(data.nt),
     side: toShared(data.side), superclass: toShared(data.superclass), cls: toShared(data.cls), size: toShared(new Float32Array(sz)), sign: toShared(new Float32Array(sg)) };
   brainParams = { ...bp, neuromod: !!(bp.neuromod && nmc) };
+  if (HUMANOID_MODE) brainParams.humanoidMode = true;
   // the fitted self-motion cancel (spec S3) rides to the reafference plugin through scaffoldParams;
   // no file = unfitted model = inert channel
   if (reaf) brainParams.scaffoldParams = { ...(bp.scaffoldParams || {}), reafference: { ...(bp.scaffoldParams?.reafference || {}), model: reaf } };
@@ -80,14 +93,31 @@ async function main() {
   window.__data = data;
   buildBrainPanel(data);
   buildScene(data);
+  if (BRIDGE_URL) {
+    try {
+      const rules = await loadAgentBridgeRules();
+      agentBridge = new AgentBridge({ terminals: env.agents || [], rules,
+        clientOptions: { url: BRIDGE_URL },
+        onReply: handleBridgeReply, onError: handleBridgeError, onStatus: updateBridgeStatus });
+      agentBridge.start();
+    } catch (error) {
+      console.warn('AgentBridge disabled:', error);
+      updateBridgeStatus('rules unavailable');
+    }
+  }
   buildUI();
+  if (HUMANOID_MODE) {
+    status('loading humanoid avatar and animations');
+    humanoidRenderer = new HumanoidRendererClass({ scene, base: BASE });
+    await humanoidRenderer.ready;
+  }
   $('#loading').remove();
   const st0 = PRESET.start || [0, 0, 0];
   if (PRESET.flySpots) for (const s of PRESET.flySpots.slice(0, FLY_CAP)) await addFly(s.pos, s.yaw, s.sex);
   else { await addFly([st0[0], st0[1]], st0[2]);
     for (let k = 1; k < Math.min(PRESET.flies || 1, FLY_CAP); k++) { const ang = k * 2.4; await addFly([1.2 * Math.cos(ang), 1.2 * Math.sin(ang)], ang + Math.PI); } }
   if (PRESET.autoThreat) setInterval(() => { if (!running || !flies.length) return; const live = flies.filter(f => f.last?.alive !== false); if (!live.length) return; selected = live[Math.floor(Math.random() * live.length)].id; launchThreat(); }, PRESET.autoThreat * 1000);
-  window.__arena = { camera, controls, flies, env, THREE, renderer, scene, gtao, composer, metrics, resolution, batches, visual, addFly, rebuildEnv, FLY_CAP, MAX_FLIES };
+  window.__arena = { camera, controls, flies, env, THREE, renderer, scene, gtao, composer, metrics, resolution, batches, visual, humanoidRenderer, addFly, rebuildEnv, FLY_CAP, MAX_FLIES, HUMANOID_MODE };
   animate();
 }
 
@@ -166,6 +196,7 @@ function rebuildEnv() {
   // Placement rebuilds own their resources; release old GPU buffers/textures before replacing them.
   envGroup.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
   envGroup.clear(); shadowDirty = true;
+  terminalMeshes.clear();
   const R = env.arena.radius;
   // floor: same 0.4 cm checker the flies' eyes see
   const cv = document.createElement('canvas'); cv.width = cv.height = 64; const cx = cv.getContext('2d');
@@ -181,7 +212,19 @@ function rebuildEnv() {
   wall.rotation.x = Math.PI / 2; wall.position.z = env.arena.wallHeight / 2; envGroup.add(wall);
   for (const o of env.obstacles) { const m = new THREE.Mesh(o.type === 'box' ? new THREE.BoxGeometry(o.sx * 2, o.sy * 2, o.sz) : new THREE.CylinderGeometry(o.r, o.r, o.sz, 32), new THREE.MeshStandardMaterial({ color: '#3d4a3d', roughness: 0.7 }));
     if (o.type !== 'box') m.rotation.x = Math.PI / 2; m.position.set(o.x, o.y, o.sz / 2); m.castShadow = m.receiveShadow = true; envGroup.add(m); }
-  for (const f of env.food) { const m = discMesh(f.r, '#f2c14e', 0.35 + 0.65 * Math.min(1, f.amount / 5)); m.position.set(f.x, f.y, 0.002); m.userData.food = f; envGroup.add(m); }
+  for (const f of env.food) { const m = discMesh(f.r, f.agentId ? '#9f7aea' : '#f2c14e', 0.35 + 0.65 * Math.min(1, f.amount / 5)); m.position.set(f.x, f.y, 0.002); m.userData.food = f; envGroup.add(m); }
+  for (const agent of env.agents || []) {
+    const tint = agent.backend === 'claude-code' ? '#f97316' : agent.backend === 'codex' ? '#10b981' : '#8b5cf6';
+    const kiosk = new THREE.Group(); kiosk.name = `agent-terminal-${agent.id}`; kiosk.userData.agentId = agent.id;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(agent.r * 0.9, agent.r * 0.65, 0.035), new THREE.MeshStandardMaterial({ color: tint, roughness: 0.65 }));
+    base.position.z = 0.02; base.castShadow = base.receiveShadow = true;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(agent.r * 0.55, agent.r * 0.4, agent.r * 0.55), new THREE.MeshStandardMaterial({ color: '#273047', roughness: 0.5 }));
+    body.position.z = 0.30 * agent.r; body.castShadow = body.receiveShadow = true;
+    const screen = new THREE.Mesh(new THREE.BoxGeometry(agent.r * 0.42, 0.012, agent.r * 0.25), new THREE.MeshStandardMaterial({ color: tint, emissive: tint, emissiveIntensity: 0.7, roughness: 0.25 }));
+    screen.position.set(0, -agent.r * 0.205, 0.30 * agent.r); screen.rotation.x = Math.PI / 2;
+    kiosk.add(base, body, screen); kiosk.position.set(agent.x, agent.y, 0); kiosk.userData.screen = screen; kiosk.userData.tint = tint;
+    terminalMeshes.set(String(agent.id), kiosk); envGroup.add(kiosk); setTerminalState(agent.id, terminalStates.get(String(agent.id)) || 'idle');
+  }
   for (const b of env.bitterPatches) { const m = discMesh(b.r, '#4f8fd6', 0.9); m.position.set(b.x, b.y, 0.002); envGroup.add(m); }
   for (const h of env.hazards) { const m = discMesh(h.r, '#d9502f', 0.9); m.position.set(h.x, h.y, 0.002); envGroup.add(m); const glow = discMesh(h.r + 0.4, '#d9502f', 0.12, 0.001); glow.position.set(h.x, h.y, 0.001); envGroup.add(glow); }
   for (const o of env.odors) { // plume as a soft radial gradient
@@ -225,7 +268,10 @@ async function addFly(pos, yaw, sex = 'm') {
   const id = nextId++; const color = FLY_COLORS[id % FLY_COLORS.length];
   const worker = new Worker(new URL('./sim/fly.worker.js', import.meta.url), { type: 'module' });
   const f = { id, worker, color, sex, ready: false, last: null, prev: null, stats: {}, ...buildFlyMesh(color, sex) };
+  if (HUMANOID_MODE) { f.group.visible = false; f.ring.visible = false; }
   scene.add(f.group); flies.push(f); batches.add(f);
+  if (HUMANOID_MODE) humanoidRenderer.addFly(f);
+  agentBridge?.addFly(f);
   worker.onmessage = e => onWorker(f, e.data);
   worker.postMessage({ type: 'init', id, graph: shared, meta, bodymap, flyXML, gait, env, pos, yaw, nProxies: FLY_CAP - 1, mode: $('#mode').value, brainOpts: brainParams, neuromod: neuromodCalib, vision: !NO_VISION, sex,
     brainMem: { memory: brainMem.memory, graph: brainMem.graph, bases: brainMem.bases, opts: brainMem.opts, fv: brainMem.fv }, wasmModule, slot: id, flyvisMap });
@@ -240,8 +286,14 @@ function onWorker(f, m) {
   else if (m.type === 'pose') {
     f.prev = f.last; f.last = m; shadowDirty = true;
     const received = performance.now(); f.poseInterval = f.recvAt ? Math.max(16, Math.min(100, received-f.recvAt)) : 1000/30; f.recvAt = received;
-    m.foodEaten?.forEach((d, k) => { if (d > 0 && env.food[k]) { env.food[k].amount = Math.max(0, env.food[k].amount - d); foodDirty = true; } });
+    m.foodEaten?.forEach((d, k) => { if (d > 0 && env.food[k]) {
+      const food = env.food[k];
+      if (food.agentId) food.amount = food.maxAmount ?? food.initialAmount ?? food.amount;
+      else food.amount = Math.max(0, food.amount - d);
+      foodDirty = true;
+    } });
     if (f.id === selected && (f.prev?.takeoffPending !== m.takeoffPending || f.prev?.flying !== m.flying)) renderFlyList();
+    agentBridge?.observe(f, m);
     broadcastOthers();
   } else if (m.type === 'activity' && f.id === selected && (f.activityTime !== m.t || histFly !== f.id)) {
     f.activityTime = m.t; brainAct.set(m.trace); brainDirty = true; onActivity(f, m);
@@ -254,6 +306,84 @@ function broadcastOthers() {
   for (const f of flies) if (f.ready) f.worker.postMessage({ type:'others', others:poses.filter(o => o.id !== f.id) });
 }
 function syncEnv() { for (const f of flies) if (f.ready) f.worker.postMessage({ type: 'env', env }); }
+
+function updateBridgeStatus(statusText) {
+  const el = $('#agentBridgeStatus');
+  if (el) el.textContent = BRIDGE_URL ? `bridge: ${statusText}` : 'bridge: disabled (use ?bridge=ws://…)';
+}
+
+function setTerminalState(id, state) {
+  const key = String(id);
+  terminalStates.set(key, state);
+  const kiosk = terminalMeshes.get(key); if (!kiosk) return;
+  const screen = kiosk.userData.screen;
+  const tint = kiosk.userData.tint || '#8b5cf6';
+  const colors = { idle: tint, calling: '#facc15', replied: '#4ade80', error: '#fb7185' };
+  const color = colors[state] || colors.idle;
+  screen.material.color.set(color); screen.material.emissive.set(color);
+  screen.material.emissiveIntensity = state === 'idle' ? 0.7 : 2.2;
+  kiosk.userData.bridgeState = state;
+}
+
+function showSpeechBubble(fly, text) {
+  const bubble = $('#agentBubble'); if (!bubble || !text) return;
+  bubble.textContent = text; bubble.hidden = false;
+  activeBubble = { fly, until: performance.now() + 10_000 };
+}
+
+function applyValence(terminalId, valence) {
+  const terminal = (env.agents || []).find(agent => String(agent.id) === String(terminalId));
+  if (!terminal) return;
+  const food = env.food.find(entry => String(entry.agentId) === String(terminal.id));
+  const odor = env.odors.find(entry => String(entry.agentId) === String(terminal.id));
+  const key = String(terminal.id);
+  const previous = terminalEffects.get(key);
+  if (previous) { clearTimeout(previous.timer); previous.restore(); terminalEffects.delete(key); }
+  let restore = () => {};
+  if (valence === 'positive' && food) {
+    const before = food.sugar;
+    food.sugar = Math.max(before, 1.0);
+    restore = () => { food.sugar = before; };
+  } else if (valence === 'negative') {
+    const patch = { x: terminal.x, y: terminal.y, r: terminal.r, bitter: 1, agentId: `reply-${terminal.id}` };
+    env.bitterPatches.push(patch);
+    restore = () => { const index = env.bitterPatches.indexOf(patch); if (index >= 0) env.bitterPatches.splice(index, 1); };
+  } else if (valence === 'notify' && odor) {
+    const before = odor.strength;
+    odor.strength = Math.max(before, 1.5);
+    restore = () => { odor.strength = before; };
+  }
+  const timer = setTimeout(() => { restore(); terminalEffects.delete(key); rebuildEnv(); syncEnv(); }, 10_000);
+  terminalEffects.set(key, { timer, restore });
+  rebuildEnv(); syncEnv();
+}
+
+function handleBridgeReply({ reply, request }) {
+  const event = request?.payload;
+  const terminalId = event?.terminal_id;
+  if (terminalId !== undefined) setTerminalState(terminalId, 'replied');
+  const fly = flies.find(item => item.id === event?.agent_id);
+  if (fly) showSpeechBubble(fly, reply.text);
+  if (terminalId !== undefined) applyValence(terminalId, reply.valence);
+}
+
+function handleBridgeError({ error, request }) {
+  const event = request?.payload;
+  if (event?.terminal_id !== undefined) setTerminalState(event.terminal_id, 'error');
+  const message = error?.message || error?.code || 'bridge error';
+  if (request?.payload) {
+    const fly = flies.find(item => item.id === request.payload.agent_id);
+    if (fly) showSpeechBubble(fly, message);
+  }
+}
+
+function sendDebugTouch(terminalId) {
+  const fly = flies.find(item => item.id === selected);
+  if (!agentBridge || !fly) { updateBridgeStatus('not connected'); return; }
+  setTerminalState(terminalId, 'calling');
+  const id = agentBridge.debugTouch(fly, terminalId);
+  if (!id) setTerminalState(terminalId, 'error');
+}
 
 // ---------------- UI ----------------
 function buildUI() {
@@ -270,9 +400,23 @@ function buildUI() {
   $('#wind').oninput = e => { const v = +e.target.value; $('#windv').textContent = v; env.wind = [v, 0]; syncEnv(); };
   $('#light').oninput = e => { env.light.sky = +e.target.value; scene.background = new THREE.Color().setHSL(0.6, 0.3, 0.02 + 0.05 * env.light.sky); syncEnv(); };
   $('#threat').onclick = () => launchThreat();
+  if (HUMANOID_MODE) $('#takeoff').hidden = true;
   $('#takeoff').onclick = () => flies.find(x => x.id === selected)?.worker.postMessage({ type: 'takeoff' });
+  buildAgentUI();
   buildScaffoldUI();
   setInterval(() => { if (foodDirty) { foodDirty = false; syncEnv(); envGroup.children.forEach(m => { if (m.userData.food) m.material.opacity = 0.35 + 0.65 * Math.min(1, m.userData.food.amount / 5); }); } renderFlyList(); }, 500);
+}
+
+function buildAgentUI() {
+  const section = $('#agentPanel'); if (!section) return;
+  const hasAgents = (env.agents || []).length > 0;
+  section.hidden = !hasAgents;
+  updateBridgeStatus(BRIDGE_URL ? 'starting' : 'disabled');
+  const list = $('#agentTerminals'); if (!list) return;
+  list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id} · ${agent.backend}</span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}">call now (synthetic)</button>` : ''}</div>`).join('');
+  list.querySelectorAll('[data-debug-terminal]').forEach(button => {
+    button.onclick = () => sendDebugTouch(button.dataset.debugTerminal);
+  });
 }
 // Scaffold toggles: one checkbox per registered plugin (src/sim/scaffold/). Unchecking posts a new
 // config to every fly's worker (FlyAgent.setScaffolds); new flies inherit via brainParams.scaffolds.
@@ -291,7 +435,10 @@ function buildScaffoldUI() {
 function onClick(e) {
   const m = new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -(e.clientY / innerHeight) * 2 + 1); raycaster.setFromCamera(m, camera);
   // select a fly?
-  for (const f of flies) { const hit = raycaster.intersectObjects(f.meshes.filter(m => m.parent.visible), false); if (hit.length) { selected = f.id; renderFlyList(); return; } }
+  if (HUMANOID_MODE) {
+    const hit = humanoidRenderer?.raycast(raycaster);
+    if (hit) { selected = hit.object.userData.flyId; renderFlyList(); return; }
+  } else for (const f of flies) { const hit = raycaster.intersectObjects(f.meshes.filter(m => m.parent.visible), false); if (hit.length) { selected = f.id; renderFlyList(); return; } }
   if (tool === 'none') return;
   const hit = raycaster.intersectObject(floorMesh); if (!hit.length) return; const p = hit[0].point;
   if (tool === 'food') { env.food.push({ x: p.x, y: p.y, r: 0.25, sugar: 1, bitter: 0, water: 0.2, amount: 5 }); env.odors.push({ x: p.x, y: p.y, odor: 'vinegar', strength: 0.8, sigma: 0.7 }); }
@@ -436,7 +583,24 @@ function animate() {
       f.ring.position.set(s.pos[0], s.pos[1], 0.003);
       updateWingBlur(f, s); f.drawnPose = s; f.drawnBlend = blend;
     }
-    f.ring.visible = f.id === selected;
+    f.ring.visible = !HUMANOID_MODE && f.id === selected;
+    if (HUMANOID_MODE) humanoidRenderer?.update(f, s, previous, blend, now);
+  }
+  if (activeBubble) {
+    const bubble = $('#agentBubble');
+    if (!bubble || now >= activeBubble.until) { if (bubble) bubble.hidden = true; activeBubble = null; }
+    else {
+      const anchor = new THREE.Vector3();
+      if (HUMANOID_MODE && activeBubble.fly.humanoid?.root) {
+        activeBubble.fly.humanoid.root.getWorldPosition(anchor); anchor.z += 0.32;
+      } else if (activeBubble.fly.last?.pos) {
+        anchor.fromArray(activeBubble.fly.last.pos);
+        anchor.z += 0.15;
+      }
+      anchor.project(camera);
+      bubble.style.left = `${(anchor.x * 0.5 + 0.5) * innerWidth}px`;
+      bubble.style.top = `${(-anchor.y * 0.5 + 0.5) * innerHeight}px`;
+    }
   }
   const sf = flies.find(x => x.id === selected);
   if (sf?.last && $('#follow').checked) { const p = sf.last.pos; followDelta.set(p[0], p[1], p[2]).sub(controls.target).multiplyScalar(0.1); controls.target.add(followDelta); camera.position.add(followDelta); }
@@ -452,11 +616,13 @@ function animate() {
     viewPoint.fromArray(f.last.pos).applyMatrix4(camera.matrixWorldInverse);
     const pixels = viewPoint.z < 0 && viewFrustum.intersectsSphere(flyBounds) ? 0.3 * projection / Math.max(0.05, -viewPoint.z) : 0;
     largest = Math.max(largest, pixels);
-    const changed = f.setDetail(pixels);
-    if (changed) shadowDirty = true;
-    batches.update(f, f.poseUpdated, changed);
+    if (!HUMANOID_MODE) {
+      const changed = f.setDetail(pixels);
+      if (changed) shadowDirty = true;
+      batches.update(f, f.poseUpdated, changed);
+    }
   }
-  batches.finish();
+  if (!HUMANOID_MODE) batches.finish();
   resolution.update(now, largest > 290);
   if (threatAnim) shadowDirty = true;
   updateShadows(now);

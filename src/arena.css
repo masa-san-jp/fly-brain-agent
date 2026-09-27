@@ -48,3 +48,33 @@ a { color: var(--acc); }
 #brain { flex: none; width: 100%; height: 220px; border-top: 1px solid var(--line); background: rgba(5,7,12,.6); }
 #scaffolds { display: grid; grid-template-columns: 1fr 1fr; gap: 1px 10px; font-size: 12px; }
 #scaffolds .scf { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-terminal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin: 0.28rem 0;
+}
+.terminal-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-right: 0.35rem;
+  border-radius: 50%;
+  background: #8b5cf6;
+  box-shadow: 0 0 0.35rem #8b5cf6;
+}
+#agentBubble {
+  position: fixed;
+  z-index: 20;
+  max-width: 16rem;
+  padding: 0.45rem 0.65rem;
+  transform: translate(-50%, -100%);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 0.7rem;
+  background: rgba(12, 16, 25, 0.92);
+  color: #f6f7fb;
+  box-shadow: 0 0.25rem 1rem rgba(0, 0, 0, 0.35);
+  font-size: 0.78rem;
+  pointer-events: none;
+}

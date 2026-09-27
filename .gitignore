@@ -8,6 +8,7 @@ data/*.npy
 data/calib_log.jsonl
 
 scripts/_tmp
+scratch/
 data/ir
 __pycache__
 

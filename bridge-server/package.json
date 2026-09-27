@@ -1,0 +1,15 @@
+{
+  "name": "fly-brain-bridge-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local WebSocket bridge for fly-brain agent speech backends",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "mock": "node src/server.mjs --mock",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
