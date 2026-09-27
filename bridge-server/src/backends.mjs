@@ -6,6 +6,9 @@ export function minimalChildEnv(sourceEnv = process.env) {
   const env = {};
   if (typeof sourceEnv.PATH === 'string') env.PATH = sourceEnv.PATH;
   if (typeof sourceEnv.HOME === 'string') env.HOME = sourceEnv.HOME;
+  // macOS keychain lookups (Claude Code subscription login) need the user name.
+  if (typeof sourceEnv.USER === 'string') env.USER = sourceEnv.USER;
+  if (typeof sourceEnv.LOGNAME === 'string') env.LOGNAME = sourceEnv.LOGNAME;
   return env;
 }
 
@@ -85,7 +88,10 @@ export function createCommandTask({ backend, prompt, workspaceDir, commandOverri
     args = typeof override.args === 'function' ? override.args(prompt) : override.args;
   } else if (backend === 'claude-code') {
     command = 'claude';
-    args = ['-p', prompt, '--output-format', 'text', '--tools', ''];
+    // No tools, and none of the owner's settings, CLAUDE.md, MCP servers,
+    // skills or session history leak into a fly-triggered run.
+    args = ['-p', prompt, '--output-format', 'text', '--tools', '', '--setting-sources', '',
+      '--strict-mcp-config', '--disable-slash-commands', '--no-session-persistence'];
   } else if (backend === 'codex') {
     command = 'codex';
     args = ['exec', '--sandbox', 'read-only', '-C', workspaceDir, '--skip-git-repo-check', prompt];

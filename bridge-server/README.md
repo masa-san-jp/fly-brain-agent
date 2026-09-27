@@ -24,7 +24,7 @@ npm run mock
 
 ```sh
 cd bridge-server/workspace
-claude -p 'JSONで短い日本語の一言を返す' --output-format text --tools ""
+claude -p 'JSONで短い日本語の一言を返す' --output-format text --tools "" --setting-sources "" --strict-mcp-config --disable-slash-commands --no-session-persistence
 codex exec --sandbox read-only -C "$PWD" --skip-git-repo-check 'JSONで短い日本語の一言を返す'
 ```
 
@@ -32,7 +32,7 @@ codex exec --sandbox read-only -C "$PWD" --skip-git-repo-check 'JSONで短い日
 
 - Origin は localhost / 127.0.0.1 の HTTP(S) だけを受け付けます。サーバは 127.0.0.1 にのみ bind します。
 - 入力はイベントの whitelist schema で検証し、未知のキーを除去してから固定テンプレートと JSON だけをプロンプトにします。
-- Claude Code は `--tools ""`（全ツール無効）、Codex は `--sandbox read-only` と専用 `workspace/` を使います。権限確認を省略するフラグは使いません。
+- Claude Code は `--tools ""`（全ツール無効）に加え、`--setting-sources ""`・`--strict-mcp-config`・`--disable-slash-commands`・`--no-session-persistence` で、オーナーの設定・CLAUDE.md・MCP・スキル・セッション履歴を読み込ませません。子プロセスに渡す環境変数は PATH・HOME・USER・LOGNAME だけです（USER はキーチェーンのログイン情報の参照に必要）。Codex は `--sandbox read-only` と専用 `workspace/` を使います。権限確認を省略するフラグは使いません。
 - Claude Code / Codex は同時に1プロセスだけ、60秒で SIGTERM、その後 SIGKILL です。
 - Ollama はローカル HTTP の JSON モード、既定モデル `gemma4:e4b`、30秒タイムアウトです。
 - レート制限は Ollama が毎分30回、Claude Code / Codex が毎分2回です。設定から変更できます。
