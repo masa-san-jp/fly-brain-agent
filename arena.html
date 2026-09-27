@@ -12,65 +12,65 @@
 <canvas id="c"></canvas>
 <div id="agentBubble" hidden role="status"></div>
 <aside id="brainpanel" hidden>
-  <header><h2 id="bpTitle">Inside fly 0</h2><span class="lr"><i class="l"></i>left <i class="r"></i>right</span><button id="bpFold" class="fold" title="Hide brain panel (])" aria-expanded="true">›</button></header>
+  <header><h2 id="bpTitle">Inside fly 0</h2><span class="lr"><i class="l"></i>left<span class="ja">左</span> <i class="r"></i>right<span class="ja">右</span></span><button id="bpFold" class="fold" title="Hide brain panel (])" aria-expanded="true">›</button></header>
   <div id="bpBody">
-    <div class="eyes"><figure><canvas id="eyeL" width="168" height="116"></canvas><figcaption>left eye</figcaption></figure><figure><canvas id="eyeR" width="168" height="116"></canvas><figcaption>right eye</figcaption></figure></div>
-    <div class="note">What each eye sees: brightness in its 721 columns, as fed to the optic-lobe model.</div>
+    <div class="eyes"><figure><canvas id="eyeL" width="168" height="116"></canvas><figcaption>left eye<span class="ja">左目</span></figcaption></figure><figure><canvas id="eyeR" width="168" height="116"></canvas><figcaption>right eye<span class="ja">右目</span></figcaption></figure></div>
+    <div class="note">What each eye sees: brightness in its 721 columns, as fed to the optic-lobe model.<span class="ja-line">それぞれの目に見えているもの：721個の個眼列の明るさ（視葉モデルへの入力）。</span></div>
     <div id="groups"></div>
   </div>
   <canvas id="brain"></canvas>
 </aside>
-<div id="loading"><div class="title">Embodied male fly connectome</div><div id="status">loading…</div></div>
+<div id="loading"><div class="title">Embodied male fly connectome</div><div class="title-ja">体を持ったオスのハエのコネクトーム</div><div id="status">loading…</div></div>
 <aside id="panel">
   <header>
-    <div class="hrow"><h1>Fly arena</h1><button id="panelFold" class="fold" title="Hide controls ([)" aria-expanded="true">‹</button></div>
-    <div class="sub">Each fly: 165,122-neuron connectome brain in a flybody physics body. <a href="./">brain viewer</a> · <a href="structures.html">algorithmic structures</a></div>
+    <div class="hrow"><h1>Fly arena<span class="ja">ハエのアリーナ</span></h1><button id="panelFold" class="fold" title="Hide controls ([)" aria-expanded="true">‹</button></div>
+    <div class="sub">Each fly: 165,122-neuron connectome brain in a flybody physics body. <a href="./">brain viewer</a> · <a href="structures.html">algorithmic structures</a><span class="ja-line">各ハエ：16万5122ニューロンのコネクトーム脳を、物理シミュレーションの体に搭載。</span></div>
   </header>
   <section>
     <div class="row">
-      <button id="play" class="primary">▶ Run</button>
-      <button id="addFly">+ Fly</button>
-      <button id="addFemale" title="Add a female fly (males court her)">+ ♀</button>
-      <label>speed <input id="speed" type="range" min="0.05" max="2" step="0.05" value="2"><span id="speedv">2.00×</span></label>
+      <button id="play" class="primary">▶ Run<span class="ja">実行</span></button>
+      <button id="addFly">+ Fly<span class="ja">追加</span></button>
+      <button id="addFemale" title="Add a female fly (males court her) / メスを追加（オスが求愛します）">+ ♀<span class="ja">メス</span></button>
+      <label>speed<span class="ja">速度</span> <input id="speed" type="range" min="0.05" max="2" step="0.05" value="2"><span id="speedv">2.00×</span></label>
     </div>
-    <div class="row"><label>world <select id="preset"></select></label></div>
+    <div class="row"><label>world<span class="ja">環境</span> <select id="preset"></select></label></div>
     <div class="row">
-      <label>motor <select id="mode"><option value="descending">descending commands</option><option value="connectome">full connectome VNC</option></select></label>
-      <label><input type="checkbox" id="follow" checked> follow</label>
+      <label>motor<span class="ja">運動</span> <select id="mode"><option value="descending">descending commands · 下降コマンド</option><option value="connectome">full connectome VNC · 全コネクトームVNC</option></select></label>
+      <label><input type="checkbox" id="follow" checked> follow<span class="ja">追従</span></label>
     </div>
-    <div class="stats" id="clock"><div><b id="simt">0.0</b><span>sim s</span></div><div><b id="rt">–</b><span>× real time</span></div><div><b id="nfly">0</b><span>flies</span></div><div><b id="fps">0</b><span>fps</span></div></div>
+    <div class="stats" id="clock"><div><b id="simt">0.0</b><span>sim s<span class="ja">シミュ秒</span></span></div><div><b id="rt">–</b><span>× real time<span class="ja">実時間比</span></span></div><div><b id="nfly">0</b><span>flies<span class="ja">匹</span></span></div><div><b id="fps">0</b><span>fps<span class="ja">描画</span></span></div></div>
   </section>
   <section>
-    <h2>Place</h2>
+    <h2>Place<span class="ja">配置</span></h2>
     <div class="row tools">
-      <button data-tool="food">sugar</button><button data-tool="odor">vinegar odor</button><button data-tool="bitter">bitter</button>
-      <button data-tool="hazard">heat</button><button data-tool="obstacle">block</button><button data-tool="co2">CO₂</button><button data-tool="none" class="on">none</button>
+      <button data-tool="food">sugar<span class="ja">砂糖</span></button><button data-tool="odor">vinegar odor<span class="ja">酢の匂い</span></button><button data-tool="bitter">bitter<span class="ja">苦味</span></button>
+      <button data-tool="hazard">heat<span class="ja">熱</span></button><button data-tool="obstacle">block<span class="ja">障害物</span></button><button data-tool="co2">CO₂<span class="ja">二酸化炭素</span></button><button data-tool="none" class="on">none<span class="ja">なし</span></button>
     </div>
-    <div class="note">Click the floor to place. Flies sense these only through their sensory neurons.</div>
+    <div class="note">Click the floor to place. Flies sense these only through their sensory neurons.<span class="ja-line">床をクリックして配置。ハエはこれらを感覚ニューロンを通してのみ感じます。</span></div>
   </section>
   <section>
-    <h2>Challenges</h2>
-    <div class="row"><button id="threat">Looming threat → selected fly</button><button id="takeoff" title="Excite the selected fly's takeoff descending neurons (DNp02, DNp04), as optogenetic activation would">Activate takeoff DNs</button></div>
-    <div class="row"><label>wind <input id="wind" type="range" min="0" max="30" step="1" value="0"> <span id="windv">0</span> cm/s</label>
-    <label>light <input id="light" type="range" min="0.05" max="1.5" step="0.05" value="1"></label></div>
+    <h2>Challenges<span class="ja">試練</span></h2>
+    <div class="row"><button id="threat">Looming threat → selected fly<span class="ja">選択中のハエに接近する脅威</span></button><button id="takeoff" title="Excite the selected fly's takeoff descending neurons (DNp02, DNp04), as optogenetic activation would">Activate takeoff DNs<span class="ja">離陸DNを刺激</span></button></div>
+    <div class="row"><label>wind<span class="ja">風</span> <input id="wind" type="range" min="0" max="30" step="1" value="0"> <span id="windv">0</span> cm/s</label>
+    <label>light<span class="ja">明るさ</span> <input id="light" type="range" min="0.05" max="1.5" step="0.05" value="1"></label></div>
   </section>
   <section id="agentPanel" hidden>
-    <h2>Agent bridge</h2>
+    <h2>Agent bridge<span class="ja">エージェント連携</span></h2>
     <div id="agentBridgeStatus" class="note">bridge: disabled</div>
     <div id="agentTerminals"></div>
-    <div class="note">Synthetic buttons are debug-only and use the same detector → bridge path.</div>
+    <div class="note">Synthetic buttons are debug-only and use the same detector → bridge path.<span class="ja-line">疑似ボタンはデバッグ用です。本物の接触と同じ「検出 → ブリッジ」の経路を通ります。</span></div>
   </section>
   <section>
-    <h2>Scaffolds</h2>
+    <h2>Scaffolds<span class="ja">足場（グラフ外の仕組み）</span></h2>
     <div id="scaffolds"></div>
-    <div class="note">Non-graph machinery (docs/37-scaffold-ledger.md). Uncheck to restore graph-only behaviour for that channel.</div>
+    <div class="note">Non-graph machinery (docs/37-scaffold-ledger.md). Uncheck to restore graph-only behaviour for that channel.<span class="ja-line">配線グラフの外から足している仕組みです。チェックを外すと、その経路は配線だけの振る舞いに戻ります。</span></div>
   </section>
   <section>
-    <h2>Flies</h2>
+    <h2>Flies<span class="ja">ハエ一覧</span></h2>
     <div id="flies"></div>
   </section>
   <section id="selsec" hidden>
-    <h2>Selected fly</h2>
+    <h2>Selected fly<span class="ja">選択中のハエ</span></h2>
     <div id="sel"></div>
   </section>
 </aside>

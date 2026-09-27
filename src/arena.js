@@ -15,10 +15,11 @@ import { parseFlyVis } from './flyvis.js';
 import { buildGroups } from './sim/groups.js';
 import { SCAFFOLD_IDS, createScaffoldSet } from './sim/scaffold/index.js';
 import { AgentBridge, loadAgentBridgeRules } from './agents/AgentBridge.js';
+import { ja, PRESET_JA, GROUP_JA, STATUS_JA, BRIDGE_JA, behaviorJa } from './i18n-ja.js';
 const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pages
 
 const $ = s => document.querySelector(s);
-const status = s => { $('#status').textContent = s; };
+const status = s => { $('#status').innerHTML = STATUS_JA[s] ? `${s}${ja(STATUS_JA[s])}` : s; };
 const FLY_COLORS = ['#ffb347', '#5ac8fa', '#a3e635', '#f472b6', '#c084fc', '#facc15', '#fb7185', '#2dd4bf'];
 const presetKey = new URLSearchParams(location.search).get('env') || 'foraging';
 const PRESET = PRESETS[presetKey] || PRESETS.foraging;
@@ -311,7 +312,7 @@ function syncEnv() { for (const f of flies) if (f.ready) f.worker.postMessage({ 
 
 function updateBridgeStatus(statusText) {
   const el = $('#agentBridgeStatus');
-  if (el) el.textContent = BRIDGE_URL ? `bridge: ${statusText}` : 'bridge: disabled (use ?bridge=ws://…)';
+  if (el) el.innerHTML = BRIDGE_URL ? `bridge: ${statusText}${BRIDGE_JA[statusText] ? ja(`ブリッジ：${BRIDGE_JA[statusText]}`) : ''}` : `bridge: disabled (use ?bridge=ws://…)${ja('ブリッジ：無効')}`;
 }
 
 function setTerminalState(id, state) {
@@ -389,11 +390,11 @@ function sendDebugTouch(terminalId) {
 
 // ---------------- UI ----------------
 function buildUI() {
-  $('#play').onclick = () => { running = !running; for (const f of flies) f.worker.postMessage({ type: running ? 'run' : 'pause' }); $('#play').textContent = running ? '❚❚ Pause' : '▶ Run'; };
+  $('#play').onclick = () => { running = !running; for (const f of flies) f.worker.postMessage({ type: running ? 'run' : 'pause' }); $('#play').innerHTML = running ? `❚❚ Pause${ja('一時停止')}` : `▶ Run${ja('実行')}`; };
   $('#addFly').onclick = () => { const a = Math.random() * Math.PI * 2, r = Math.random() * env.arena.radius * 0.6; addFly([r * Math.cos(a), r * Math.sin(a)], Math.random() * Math.PI * 2); };
   $('#addFemale').onclick = () => { const a = Math.random() * Math.PI * 2, r = Math.random() * env.arena.radius * 0.6; addFly([r * Math.cos(a), r * Math.sin(a)], Math.random() * Math.PI * 2, 'f'); };
   $('#speed').oninput = e => { speed = +e.target.value; $('#speedv').textContent = speed.toFixed(2) + '×'; for (const f of flies) f.worker.postMessage({ type: 'speed', speed }); };
-  $('#preset').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<option value="${k}" ${k === presetKey ? 'selected' : ''}>${p.label}</option>`).join('');
+  $('#preset').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<option value="${k}" ${k === presetKey ? 'selected' : ''}>${p.label}${PRESET_JA[k] ? ` · ${PRESET_JA[k]}` : ''}</option>`).join('');
   $('#preset').onchange = e => { location.search = '?env=' + e.target.value; };
   $('#mode').onchange = e => { for (const f of flies) f.worker.postMessage({ type: 'mode', mode: e.target.value }); };
   document.querySelectorAll('.tools button').forEach(b => b.onclick = () => { tool = b.dataset.tool; document.querySelectorAll('.tools button').forEach(x => x.classList.toggle('on', x === b)); });
@@ -415,7 +416,7 @@ function buildAgentUI() {
   section.hidden = !hasAgents;
   updateBridgeStatus(BRIDGE_URL ? 'starting' : 'disabled');
   const list = $('#agentTerminals'); if (!list) return;
-  list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id} · ${agent.backend}</span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}">call now (synthetic)</button>` : ''}</div>`).join('');
+  list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span class="terminal-name" title="${agent.id} · ${agent.backend}"><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id}<small>${agent.backend}</small></span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}" title="Synthetic touch for debugging / デバッグ用の疑似接触">call now${ja('今すぐ呼ぶ')}</button>` : ''}</div>`).join('');
   list.querySelectorAll('[data-debug-terminal]').forEach(button => {
     button.onclick = () => sendDebugTouch(button.dataset.debugTerminal);
   });
@@ -455,18 +456,18 @@ function renderFlyList() {
   $('#nfly').textContent = flies.length;
   $('#flies').innerHTML = flies.map(f => { const s = f.last || {}; const e = s.energy ?? 0, h = s.health ?? 1;
     return `<div class="fly ${f.id === selected ? 'sel' : ''}" data-id="${f.id}"><i class="dot" style="background:${f.color}"></i>
-      <div>${f.sex === 'f' ? '♀' : '♂'} fly ${f.id} <span style="color:var(--acc)">${s.behavior || ''}</span><div class="bar"><i style="width:${e * 100}%;background:#f2c14e"></i></div><div class="bar"><i style="width:${h * 100}%;background:#4ade80"></i></div></div>
+      <div>${f.sex === 'f' ? '♀' : '♂'} fly ${f.id} <span style="color:var(--acc)">${s.behavior || ''}</span>${behaviorJa(s.behavior) ? ja(behaviorJa(s.behavior)) : ''}<div class="bar"><i style="width:${e * 100}%;background:#f2c14e"></i></div><div class="bar"><i style="width:${h * 100}%;background:#4ade80"></i></div></div>
       <span style="color:var(--dim)">${s.t ? (s.t / 1000).toFixed(1) + 's' : '…'}</span></div>`; }).join('');
   $('#flies').querySelectorAll('.fly').forEach(el => el.onclick = () => { selected = +el.dataset.id; renderFlyList(); });
   const f = flies.find(x => x.id === selected); $('#selsec').hidden = !f;
-  $('#takeoff').textContent = f?.last?.takeoffPending ? (running ? 'Takeoff queued' : 'Takeoff queued · press Run') : 'Activate takeoff DNs';
+  $('#takeoff').innerHTML = f?.last?.takeoffPending ? (running ? `Takeoff queued${ja('離陸待ち')}` : `Takeoff queued · press Run${ja('離陸待ち・実行を押す')}`) : `Activate takeoff DNs${ja('離陸DNを刺激')}`;
   $('#takeoff').disabled = !f?.ready || f.last?.flying || f.last?.alive === false;
   if (f?.last) { const s = f.last, c = s.cmd || {};
-    $('#sel').innerHTML = `<div class="kv"><span>behaviour</span><span style="color:var(--acc)">${s.behavior || ''}</span><span>energy</span><span>${(s.energy * 100).toFixed(0)}%</span><span>health</span><span>${(s.health * 100).toFixed(0)}%</span>
-      <span>food eaten</span><span>${(s.eaten * 1000).toFixed(1)} mg·eq</span><span>distance travelled</span><span>${(s.dist || 0).toFixed(1)} cm</span><span>takeoffs / flights</span><span>${s.jumps || 0} / ${s.flights || 0}</span><span>endogenous state</span><span>${s.drive || '–'}</span>${s.nm ? `<span>AKH / insulin</span><span>${s.nm.akh.toFixed(2)} / ${s.nm.dilp.toFixed(2)}</span><span>octopamine (AKHR neurons)</span><span>${s.nm.oa.toFixed(1)} Hz, arousal ${(s.nm.arousal * 100).toFixed(0)}%</span>` : ''}<span>walk drive (BDN2/oDN1/P9)</span><span>${(c.drive || 0).toFixed(0)} Hz</span>
-      <span>backward (MDN)</span><span>${(c.back || 0).toFixed(0)} Hz</span><span>steering (DNa01/02)</span><span>${(c.turn || 0).toFixed(2)}</span>
-      <span>giant fibre</span><span>${(c.escape || 0).toFixed(0)} Hz</span><span>MN9 (proboscis)</span><span>${(s.mn9 || 0).toFixed(0)} Hz</span>
-      <span>pharyngeal pump</span><span>${((s.feeding || 0) * 100).toFixed(0)}%</span><span>sensory neurons driven</span><span>${s.nSensory}</span></div>`; }
+    $('#sel').innerHTML = `<div class="kv"><span>behaviour${ja('行動')}</span><span style="color:var(--acc)">${s.behavior || ''}${behaviorJa(s.behavior) ? ja(behaviorJa(s.behavior)) : ''}</span><span>energy${ja('エネルギー')}</span><span>${(s.energy * 100).toFixed(0)}%</span><span>health${ja('体力')}</span><span>${(s.health * 100).toFixed(0)}%</span>
+      <span>food eaten${ja('摂食量')}</span><span>${(s.eaten * 1000).toFixed(1)} mg·eq</span><span>distance travelled${ja('移動距離')}</span><span>${(s.dist || 0).toFixed(1)} cm</span><span>takeoffs / flights${ja('離陸 / 飛行')}</span><span>${s.jumps || 0} / ${s.flights || 0}</span><span>endogenous state${ja('内因性の状態')}</span><span>${s.drive || '–'}</span>${s.nm ? `<span>AKH / insulin${ja('AKH / インスリン')}</span><span>${s.nm.akh.toFixed(2)} / ${s.nm.dilp.toFixed(2)}</span><span>octopamine (AKHR neurons)${ja('オクトパミン（AKHRニューロン）')}</span><span>${s.nm.oa.toFixed(1)} Hz, arousal ${(s.nm.arousal * 100).toFixed(0)}%</span>` : ''}<span>walk drive (BDN2/oDN1/P9)${ja('歩行駆動')}</span><span>${(c.drive || 0).toFixed(0)} Hz</span>
+      <span>backward (MDN)${ja('後退')}</span><span>${(c.back || 0).toFixed(0)} Hz</span><span>steering (DNa01/02)${ja('操舵')}</span><span>${(c.turn || 0).toFixed(2)}</span>
+      <span>giant fibre${ja('巨大繊維')}</span><span>${(c.escape || 0).toFixed(0)} Hz</span><span>MN9 (proboscis)${ja('MN9（口吻）')}</span><span>${(s.mn9 || 0).toFixed(0)} Hz</span>
+      <span>pharyngeal pump${ja('咽頭ポンプ')}</span><span>${((s.feeding || 0) * 100).toFixed(0)}%</span><span>sensory neurons driven${ja('駆動中の感覚ニューロン')}</span><span>${s.nSensory}</span></div>`; }
 }
 
 // ---------------- brain panel: what the selected fly sees, and its named neuron groups ----------------
@@ -483,8 +484,8 @@ function showGroupInInset(j) {
 function buildBrainPanel(data) {
   groups = buildGroups(bodymap, meta.types, data.side);
   $('#groups').innerHTML = groups.map((g, j) => `<div class="g" data-j="${j}">
-      <span class="name"><i style="background:${g.color}"></i>${g.label} <small>${g.L.length + g.R.length}</small><button class="q" title="what is this?">?</button></span>
-      <canvas width="236" height="48"></canvas><span class="v"><b class="l">–</b><b class="r">–</b></span>
+      <span class="name"><i style="background:${g.color}"></i><span class="nm" title="${g.label}"><span>${g.label}</span><small>${GROUP_JA[g.key] ? `${GROUP_JA[g.key]} · ` : ''}${g.L.length + g.R.length}</small></span><button class="q" title="what is this? / これは何？">?</button></span>
+      <canvas width="184" height="48"></canvas><span class="v"><b class="l">–</b><b class="r">–</b></span>
       <div class="info" hidden>${g.info}</div></div>`).join('');
   $('#groups').querySelectorAll('.g').forEach(el => {
     const j = +el.dataset.j;
@@ -500,7 +501,7 @@ function buildBrainPanel(data) {
   $('#brainpanel').hidden = false;
 }
 function onActivity(f, m) {
-  if (histFly !== f.id) { histFly = f.id; hist = groups.map(() => [[], []]); $('#bpTitle').innerHTML = `Inside fly ${f.id} <i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${f.color}"></i>`; }
+  if (histFly !== f.id) { histFly = f.id; hist = groups.map(() => [[], []]); $('#bpTitle').innerHTML = `Inside fly ${f.id}${ja(`ハエ${f.id}の内部`)} <i style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${f.color}"></i>`; }
   const rows = $('#groups').children;
   groups.forEach((g, j) => {
     const h = hist[j]; h[0].push(m.groups[j * 2]); h[1].push(m.groups[j * 2 + 1]); if (h[0].length > HIST) { h[0].shift(); h[1].shift(); }

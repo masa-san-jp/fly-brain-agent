@@ -34,14 +34,14 @@ a { color: var(--acc); }
 .eyes canvas { width: 100%; height: auto; display: block; background: #05070c; border-radius: 6px; }
 .eyes figcaption { color: var(--dim); font-size: 11px; text-align: center; margin-top: 2px; }
 #bpBody .note { margin: 4px 0 8px; }
-#groups .g { display: grid; grid-template-columns: 1fr 118px 64px; gap: 2px 8px; align-items: center; padding: 4px 6px; border-radius: 6px; cursor: default; }
+#groups .g { display: grid; grid-template-columns: 1fr 92px 58px; gap: 2px 8px; align-items: center; padding: 4px 6px; border-radius: 6px; cursor: default; }
 #groups .g:hover { background: rgba(255,255,255,.06); }
 #groups .name { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; }
 #groups .name i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 #groups .name small { color: var(--dim); }
 #groups .q { border: 0; background: none; color: var(--dim); padding: 0 2px; font-size: 11px; }
 #groups .q:hover { color: var(--fg); background: none; }
-#groups canvas { width: 118px; height: 24px; display: block; }
+#groups canvas { width: 92px; height: 24px; display: block; }
 #groups .v { font-variant-numeric: tabular-nums; font-size: 11px; text-align: right; line-height: 1.2; }
 #groups .v .l, #groups .v .r { background: none; display: block; }
 #groups .info { grid-column: 1 / -1; color: var(--dim); font-size: 11.5px; padding: 2px 0 4px 14px; }
@@ -78,3 +78,30 @@ a { color: var(--acc); }
   font-size: 0.78rem;
   pointer-events: none;
 }
+
+/* Japanese glosses (src/i18n-ja.js): English stays primary; the gloss is smaller and dimmer.
+   Inline next to short labels; on its own line where width is fixed (tiles, key/value grid,
+   neuron groups) so the English layout keeps its columns. */
+.ja { margin-left: .35em; font-size: .86em; font-weight: 400; color: inherit; opacity: .72;
+  text-transform: none; letter-spacing: normal; white-space: nowrap; }
+.ja-line { display: block; margin-top: 2px; opacity: .85; }
+#panel h2 .ja { font-size: 11px; opacity: .8; }
+#panel h1 .ja { font-size: 12px; }
+button .ja { opacity: .78; }
+button.primary .ja { opacity: .85; }
+.stats span .ja, .kv .ja, #sel .ja { display: block; margin-left: 0; font-size: 10.5px; line-height: 1.25; }
+.stats span { line-height: 1.25; }
+.kv > span { padding: 1px 0; }
+#groups .nm { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+#groups .nm > span:first-child { overflow: hidden; text-overflow: ellipsis; }
+#groups .nm small { font-size: 10.5px; }
+#flies .fly .ja { font-size: 11px; }
+.eyes figcaption .ja, #brainpanel .lr .ja { margin-left: .2em; }
+#brainpanel h2 .ja { font-size: 11px; font-weight: 400; }
+#agentBridgeStatus .ja { margin-left: .5em; }
+#loading .title-ja { font-size: 14px; color: var(--dim); margin: 2px 0 6px; letter-spacing: .04em; }
+#panel .row label:has(select) { flex: 1 1 100%; min-width: 0; }
+#panel .row label select { flex: 1; min-width: 0; max-width: 100%; text-overflow: ellipsis; }
+.agent-terminal-row .terminal-name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agent-terminal-row .terminal-name small { margin-left: .45em; color: var(--dim); font-size: 11px; }
+.agent-terminal-row button { flex: none; padding: 3px 8px; }
