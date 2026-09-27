@@ -13,7 +13,8 @@ export class RuleTable {
   }
 
   backendFor(event, terminal = null) {
-    if (event?.event === 'touched_agent' && terminal?.backend) return terminal.backend;
+    if (event?.event === 'request' && this.rules.request) return this.rules.request;
+    if ((event?.event === 'touched_agent' || event?.event === 'request') && terminal?.backend) return terminal.backend;
     return this.rules[event?.event] || 'ollama';
   }
 }

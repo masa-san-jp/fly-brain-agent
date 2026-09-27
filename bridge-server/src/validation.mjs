@@ -1,4 +1,5 @@
 import vocab from '../../src/agents/brainStateVocab.json' with { type: 'json' };
+import { ATTRACTIVE_ODORS } from '../../src/agents/arenaTools.js';
 
 const EVENTS = new Set([
   'touched_agent',
@@ -9,6 +10,7 @@ const EVENTS = new Set([
   'idle_long',
   'died',
   'narrate',
+  'request',
 ]);
 
 const GROUP_KEYS = Object.freeze([
@@ -22,6 +24,8 @@ const BRAIN_STATE_VALUES = new Map(BRAIN_STATE_FACTS.map((fact) => [fact, new Se
 
 const MAX_IDENTIFIER_LENGTH = 64;
 const MAX_BEHAVIOR_LENGTH = 40;
+const MAX_REQUEST_KIND_LENGTH = 32;
+const MAX_REQUEST_TEXT_LENGTH = 80;
 
 export class PayloadValidationError extends Error {
   constructor(message) {
@@ -87,12 +91,12 @@ function boundedNumber(value, field, low, high) {
   return Math.max(low, Math.min(high, value));
 }
 
-function validateNarration(payload, clean) {
-  if (!Array.isArray(payload.state_table) || payload.state_table.length === 0 || payload.state_table.length > 8) {
+function validateStateTable(value) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 8) {
     throw new PayloadValidationError('state_table must contain one to eight items');
   }
   const facts = new Set();
-  clean.state_table = payload.state_table.map((item) => {
+  const stateTable = value.map((item) => {
     if (!isRecord(item) || !BRAIN_STATE_FACT_SET.has(item.fact)) {
       throw new PayloadValidationError('state_table contains an unknown fact');
     }
@@ -103,6 +107,12 @@ function validateNarration(payload, clean) {
     facts.add(item.fact);
     return { fact: item.fact, value: item.value };
   });
+  return { stateTable, facts };
+}
+
+function validateNarration(payload, clean) {
+  const { stateTable, facts } = validateStateTable(payload.state_table);
+  clean.state_table = stateTable;
   if (!Array.isArray(payload.changed) || payload.changed.length > 8 ||
       payload.changed.some((fact) => !BRAIN_STATE_FACT_SET.has(fact)) ||
       new Set(payload.changed).size !== payload.changed.length ||
@@ -142,6 +152,47 @@ function validateNarration(payload, clean) {
   }
 }
 
+function validateArenaSnapshot(value) {
+  if (!isRecord(value)) throw new PayloadValidationError('arena must be an object');
+  const pose = value.pose;
+  if (!isRecord(pose) || !isFiniteNumber(pose.x) || !isFiniteNumber(pose.y) || !isFiniteNumber(pose.yaw)) {
+    throw new PayloadValidationError('arena.pose must contain x, y and yaw');
+  }
+  if (!Array.isArray(value.items) || value.items.length > 128) throw new PayloadValidationError('arena.items is invalid');
+  const items = value.items.map((item) => {
+    if (!isRecord(item) || !['food', 'odor', 'bitter'].includes(item.type) || !isFiniteNumber(item.x) || !isFiniteNumber(item.y)) {
+      throw new PayloadValidationError('arena.items contains an invalid item');
+    }
+    if (item.type === 'odor' && !ATTRACTIVE_ODORS.includes(item.odor)) throw new PayloadValidationError('arena odor is not attractive');
+    return {
+      type: item.type, x: item.x, y: item.y,
+      ...(item.r === undefined ? {} : { r: boundedNumber(item.r, 'arena.items.r', 0, 2.5) }),
+      ...(item.amount === undefined ? {} : { amount: boundedNumber(item.amount, 'arena.items.amount', 0, 5) }),
+      ...(item.odor === undefined ? {} : { odor: item.odor }),
+      ...(item.strength === undefined ? {} : { strength: boundedNumber(item.strength, 'arena.items.strength', 0, 1) }),
+      ...(item.sigma === undefined ? {} : { sigma: boundedNumber(item.sigma, 'arena.items.sigma', 0, 1.2) }),
+      ...(item.agentPlaced ? { agentPlaced: true } : {}),
+    };
+  });
+  return { pose: { x: pose.x, y: pose.y, yaw: pose.yaw }, items };
+}
+
+function validateRequest(payload, clean) {
+  if (typeof payload.request_kind !== 'string' || payload.request_kind.length === 0 || payload.request_kind.length > MAX_REQUEST_KIND_LENGTH) {
+    throw new PayloadValidationError('request_kind is invalid');
+  }
+  if (payload.request_text !== undefined && (typeof payload.request_text !== 'string' || payload.request_text.length > MAX_REQUEST_TEXT_LENGTH)) {
+    throw new PayloadValidationError('request_text is invalid');
+  }
+  if (!Object.prototype.hasOwnProperty.call(payload, 'terminal_id')) throw new PayloadValidationError('request terminal_id is required');
+  clean.terminal_id = validateIdentifier(payload.terminal_id, 'terminal_id');
+  const { stateTable } = validateStateTable(payload.state_table);
+  clean.request_kind = payload.request_kind;
+  clean.request_text = payload.request_text ?? '';
+  clean.state_table = stateTable;
+  clean.arena = validateArenaSnapshot(payload.arena);
+}
+
 export function validateEventPayload(payload) {
   if (!isRecord(payload)) throw new PayloadValidationError('payload must be an object');
   if (!EVENTS.has(payload.event)) throw new PayloadValidationError('unknown event');
@@ -169,6 +220,7 @@ export function validateEventPayload(payload) {
   }
 
   if (payload.event === 'narrate') validateNarration(payload, clean);
+  if (payload.event === 'request') validateRequest(payload, clean);
 
   return clean;
 }

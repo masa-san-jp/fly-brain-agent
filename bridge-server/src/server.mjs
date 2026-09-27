@@ -9,15 +9,18 @@ import {
   createCommandTask,
   createOllamaTask,
   minimalChildEnv,
+  runRandom,
   runMock,
 } from './backends.mjs';
+import { nothingAction, validateArenaAction } from '../../src/agents/arenaTools.js';
 
-const BACKENDS = new Set(['ollama', 'claude-code', 'codex', 'mock']);
+const BACKENDS = new Set(['ollama', 'claude-code', 'codex', 'mock', 'random']);
 const DEFAULT_RATE_LIMITS = Object.freeze({
   ollama: { limit: 30, windowMs: 60_000 },
   'claude-code': { limit: 2, windowMs: 60_000 },
   codex: { limit: 2, windowMs: 60_000 },
   mock: { limit: 60, windowMs: 60_000 },
+  random: { limit: 60, windowMs: 60_000 },
 });
 const DEFAULT_TIMEOUT_MS = 60_000;
 const DEFAULT_OLLAMA_TIMEOUT_MS = 30_000;
@@ -86,6 +89,27 @@ function parseJsonOutput(raw) {
     }
   }
   return { text: normalizeReplyText(text) || '……', valence: 'notify' };
+}
+
+export function parseToolReply(raw) {
+  const text = typeof raw === 'string' ? raw.trim() : '';
+  const candidates = [text];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fenced) candidates.push(fenced[1].trim());
+  const firstObject = text.indexOf('{');
+  const lastObject = text.lastIndexOf('}');
+  if (firstObject >= 0 && lastObject > firstObject) candidates.push(text.slice(firstObject, lastObject + 1));
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (isRecord(parsed) && typeof parsed.text === 'string') {
+        return { action: validateArenaAction(parsed.action), text: normalizeReplyText(parsed.text) || '環境を見ているよ。' };
+      }
+    } catch {
+      // Invalid backend output becomes a safe no-op.
+    }
+  }
+  return { action: nothingAction(), text: '環境を見ているよ。' };
 }
 
 function normalizeReplyText(value) {
@@ -263,22 +287,28 @@ export async function startBridgeServer(options = {}) {
       } else if (backend === 'ollama') {
         task = createOllamaTask({ prompt, model: ollamaModel, fetchImpl });
       } else if (backend === 'mock') {
-        task = { promise: runMock({ event: validatedEvent.event, delayMs: options.mockDelayMs ?? 10 }) };
+        task = { promise: runMock({ event: validatedEvent, delayMs: options.mockDelayMs ?? 10 }) };
+      } else if (backend === 'random') {
+        task = { promise: runRandom({ request: validatedEvent }) };
       } else {
         task = createCommandTask({ backend, prompt, workspaceDir, commandOverrides, env: childEnv });
       }
 
       const rawReply = await runTaskWithTimeout(task, backend === 'ollama' ? ollamaTimeoutMs : timeoutMs, killGraceMs);
-      const parsedReply = parseJsonOutput(redactSecrets(rawReply, sourceEnv));
+      const parsedReply = validatedEvent.event === 'request'
+        ? parseToolReply(redactSecrets(rawReply, sourceEnv))
+        : parseJsonOutput(redactSecrets(rawReply, sourceEnv));
       const replyText = redactSecrets(parsedReply.text, sourceEnv);
-      send(ws, {
+      const response = {
         type: 'reply',
         id: request.id,
         backend: requestedBackend,
         text: replyText,
-        valence: parsedReply.valence,
         latencyMs: Date.now() - startedAt,
-      });
+      };
+      if (validatedEvent.event === 'request') response.action = parsedReply.action;
+      else response.valence = parsedReply.valence;
+      send(ws, response);
       logCall({ id: request.id, backend: requestedBackend, event: validatedEvent.event, payload: validatedEvent, latency: Date.now() - startedAt, outcome: 'success', reply: replyText });
     } catch (error) {
       const code = error instanceof TimeoutError ? 'timeout' : 'backend_error';

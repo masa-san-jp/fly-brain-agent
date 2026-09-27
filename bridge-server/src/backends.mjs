@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { ATTRACTIVE_ODORS, nothingAction, validateArenaAction } from '../../src/agents/arenaTools.js';
 
 export const DEFAULT_OLLAMA_MODEL = 'gemma4:e4b';
 
@@ -116,8 +117,27 @@ export const MOCK_REPLIES = Object.freeze({
   narrate: ['左から何かいい匂いがする。', 'notify'],
 });
 
+export function randomToolAction(request, random = Math.random) {
+  const pose = request?.arena?.pose || { x: 0, y: 0, yaw: 0 };
+  const items = request?.arena?.items || [];
+  const candidates = [
+    { tool: 'nothing' },
+    { tool: 'place_sugar', near: 'fly', distance: 0.3, amount: 2 },
+    { tool: 'place_sugar', near: 'fly', distance: 0.8, amount: 1 },
+    { tool: 'place_odor', odor: ATTRACTIVE_ODORS[0], x: pose.x, y: pose.y, strength: 0.6, sigma: 0.8, ttl: 10_000 },
+    { tool: 'place_odor', odor: ATTRACTIVE_ODORS[1], x: pose.x, y: pose.y, strength: 0.6, sigma: 0.8, ttl: 10_000 },
+  ];
+  if (items.some(item => item.type === 'bitter')) candidates.push({ tool: 'remove_bitter', x: pose.x, y: pose.y, r: 0.5 });
+  return validateArenaAction(candidates[Math.floor(Math.max(0, Math.min(0.999999, Number(random()))) * candidates.length)]);
+}
+
+export async function runRandom({ request, random = Math.random }) {
+  return JSON.stringify({ action: randomToolAction(request, random), text: '環境をランダムに試す / ランダム制御' });
+}
+
 export async function runMock({ event, delayMs = 10 }) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
-  const [text, valence] = MOCK_REPLIES[event] ?? ['見ているよ。', 'notify'];
+  if (event?.event === 'request') return JSON.stringify({ action: { tool: 'place_sugar', near: 'fly', distance: 0.3, amount: 1 }, text: '近くに食べ物を出すね。' });
+  const [text, valence] = MOCK_REPLIES[event?.event ?? event] ?? ['見ているよ。', 'notify'];
   return JSON.stringify({ text, valence });
 }

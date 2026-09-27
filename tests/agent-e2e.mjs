@@ -42,14 +42,15 @@ test('agents arena mock loop and continuous narration work in Playwright', async
     await page.locator('[data-debug-terminal="ollama"]').click({ force: true });
     await page.waitForFunction(() => !document.querySelector('#agentBubble')?.hidden, null, { timeout: 15_000 });
     const bubble = await page.locator('#agentBubble').textContent();
-    assert.match(bubble, /こんにちは|ここにいる|甘くてうれしい！|おなかがすいたよ。/);
-    await page.waitForFunction(() => window.__arena.env.food.find(food => food.agentId === 'ollama')?.sugar >= 1, null, { timeout: 5_000 });
-    const envSugar = await page.evaluate(() => window.__arena.env.food.find(food => food.agentId === 'ollama').sugar);
-    assert.ok(envSugar >= 1);
+    assert.match(bubble, /近くに食べ物を出すね|砂糖を配置|左から何かいい匂いがする/);
+    await page.waitForFunction(() => window.__arena.env.food.some(food => food.agentPlaced), null, { timeout: 5_000 });
+    const placed = await page.evaluate(() => window.__arena.env.food.some(food => food.agentPlaced));
+    assert.equal(placed, true);
     const log = await readFile(logPath, 'utf8');
-    assert.match(log, /"event":"touched_agent"/);
+    assert.match(log, /"event":"request"/);
     assert.match(log, /"id":"debug-/);
     assert.match(log, /"terminal_id":"ollama"/);
+    assert.match(log, /"request_kind":"feed"/);
     assert.match(log, /"payload":/);
     await page.waitForFunction(() => document.querySelector('#narrationNotes')?.textContent?.trim(), null, { timeout: 40_000 });
     // The bubble may still hold the touch reply (transition replies keep priority for 10 s),

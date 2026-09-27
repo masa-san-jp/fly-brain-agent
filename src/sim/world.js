@@ -19,9 +19,9 @@ export const DEFAULT_ENV = {
 
 const AGENT_TERMINALS = [
   { id: 'ollama', backend: 'ollama', x: -0.8, y: 0.7, r: 0.22,
-    odor: 'banana', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 8000 },
+    kind: 'feed', request: '食べ物を出して', odor: 'banana', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 8000 },
   { id: 'claude', backend: 'claude-code', x: 0.9, y: -0.7, r: 0.22,
-    odor: 'vinegar', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 60000 },
+    kind: 'guide', request: '食べ物のありかを教えて', odor: 'vinegar', strength: 1.0, sigma: 1.4, sugar: 0.5, cooldownMs: 60000 },
 ];
 
 function agentEnv() {

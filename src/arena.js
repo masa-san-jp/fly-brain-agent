@@ -15,6 +15,8 @@ import { parseFlyVis } from './flyvis.js';
 import { buildGroups } from './sim/groups.js';
 import { SCAFFOLD_IDS, createScaffoldSet } from './sim/scaffold/index.js';
 import { AgentBridge, loadAgentBridgeRules } from './agents/AgentBridge.js';
+import { RuleTable } from './agents/RuleTable.js';
+import { applyArenaAction, arenaItems } from './agents/arenaTools.js';
 import { NeuralNarrator } from './agents/NeuralNarrator.js';
 import { ja, PRESET_JA, GROUP_JA, STATUS_JA, BRIDGE_JA, behaviorJa } from './i18n-ja.js';
 const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pages
@@ -45,6 +47,7 @@ const NO_VISION = ['0', 'false', 'off', 'no'].includes((new URLSearchParams(loca
 const HUMANOID_MODE = new URLSearchParams(location.search).get('avatar') === 'vrm';
 const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') ||
   (presetKey === 'agents' && HUMANOID_MODE ? 'ws://127.0.0.1:8787' : null);
+const REQUEST_BACKEND = new URLSearchParams(location.search).get('agentBackend');
 const DEBUG_TOUCH = new URLSearchParams(location.search).get('touch') === 'debug';
 const NARRATE_QUERY = new URLSearchParams(location.search).get('narrate');
 const NARRATE_INTERVAL = Math.max(250, Number(new URLSearchParams(location.search).get('narrateEvery')) * 1000 || 4_000);
@@ -102,9 +105,13 @@ async function main() {
   buildScene(data);
   if (BRIDGE_URL) {
     try {
-      const rules = await loadAgentBridgeRules();
+      const loadedRules = await loadAgentBridgeRules();
+      const rules = ['ollama', 'claude-code', 'codex', 'random'].includes(REQUEST_BACKEND)
+        ? new RuleTable({ ...loadedRules.rules, request: REQUEST_BACKEND, touched_agent: REQUEST_BACKEND })
+        : loadedRules;
       agentBridge = new AgentBridge({ terminals: env.agents || [], rules,
         clientOptions: { url: BRIDGE_URL },
+        getArenaSnapshot: ({ event }) => ({ pose: { x: event.state.pos[0], y: event.state.pos[1], yaw: event.state.yaw }, items: arenaItems(env) }),
         onReply: handleBridgeReply, onError: handleBridgeError, onStatus: updateBridgeStatus });
       agentBridge.start();
     } catch (error) {
@@ -201,6 +208,10 @@ function buildScene(data) {
 }
 let pd = null;
 function discMesh(r, color, opacity = 1, z = 0.0015) { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 48), new THREE.MeshStandardMaterial({ color, transparent: opacity < 1, opacity, roughness: 0.8 })); m.position.z = z; m.receiveShadow = true; return m; }
+function agentMarker(x, y, color = '#c084fc') {
+  const marker = new THREE.Mesh(new THREE.RingGeometry(0.055, 0.07, 24), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+  marker.position.set(x, y, 0.012); return marker;
+}
 function rebuildEnv() {
   // Placement rebuilds own their resources; release old GPU buffers/textures before replacing them.
   envGroup.traverse(o => { if (o.isMesh) { o.geometry.dispose(); o.material.map?.dispose(); o.material.dispose(); } });
@@ -221,7 +232,7 @@ function rebuildEnv() {
   wall.rotation.x = Math.PI / 2; wall.position.z = env.arena.wallHeight / 2; envGroup.add(wall);
   for (const o of env.obstacles) { const m = new THREE.Mesh(o.type === 'box' ? new THREE.BoxGeometry(o.sx * 2, o.sy * 2, o.sz) : new THREE.CylinderGeometry(o.r, o.r, o.sz, 32), new THREE.MeshStandardMaterial({ color: '#3d4a3d', roughness: 0.7 }));
     if (o.type !== 'box') m.rotation.x = Math.PI / 2; m.position.set(o.x, o.y, o.sz / 2); m.castShadow = m.receiveShadow = true; envGroup.add(m); }
-  for (const f of env.food) { const m = discMesh(f.r, f.agentId ? '#9f7aea' : '#f2c14e', 0.35 + 0.65 * Math.min(1, f.amount / 5)); m.position.set(f.x, f.y, 0.002); m.userData.food = f; envGroup.add(m); }
+  for (const f of env.food) { const m = discMesh(f.r, f.agentId ? '#9f7aea' : f.agentPlaced ? '#c084fc' : '#f2c14e', 0.35 + 0.65 * Math.min(1, f.amount / 5)); m.position.set(f.x, f.y, 0.002); m.userData.food = f; envGroup.add(m); if (f.agentPlaced) envGroup.add(agentMarker(f.x, f.y)); }
   for (const agent of env.agents || []) {
     const tint = agent.backend === 'claude-code' ? '#f97316' : agent.backend === 'codex' ? '#10b981' : '#8b5cf6';
     const kiosk = new THREE.Group(); kiosk.name = `agent-terminal-${agent.id}`; kiosk.userData.agentId = agent.id;
@@ -240,7 +251,7 @@ function rebuildEnv() {
     const g = document.createElement('canvas'); g.width = g.height = 128; const gx = g.getContext('2d'); const grd = gx.createRadialGradient(64, 64, 0, 64, 64, 64);
     const col = o.odor === 'co2' ? '120,200,255' : '190,255,120'; grd.addColorStop(0, `rgba(${col},0.45)`); grd.addColorStop(1, `rgba(${col},0)`); gx.fillStyle = grd; gx.fillRect(0, 0, 128, 128);
     const m = new THREE.Mesh(new THREE.CircleGeometry(o.sigma * 2.2, 48), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(g), transparent: true, depthWrite: false }));
-    m.position.set(o.x, o.y, 0.004); envGroup.add(m); }
+    m.position.set(o.x, o.y, 0.004); envGroup.add(m); if (o.agentPlaced) envGroup.add(agentMarker(o.x, o.y, '#67e8f9')); }
 }
 function buildFlyMesh(color, sex) {
   const appearance = visual.instantiate(sex);
@@ -379,6 +390,13 @@ function handleBridgeReply({ reply, request }) {
     if (fly) showSpeechBubble(fly, reply.text, { priority: 0 });
     return;
   }
+  if (event?.event === 'request') {
+    const result = applyArenaAction(env, reply?.action, { pose: event.state, terminals: env.agents, terminalId: event.terminal_id, nowMs: performance.now() });
+    Object.assign(env, result.env);
+    rebuildEnv(); syncEnv();
+    if (fly) showSpeechBubble(fly, `${reply?.text || ''}\n${result.line}`, { priority: 1 });
+    return;
+  }
   const terminalId = event?.terminal_id;
   if (terminalId !== undefined) setTerminalState(terminalId, 'replied');
   if (fly) showSpeechBubble(fly, reply.text, { priority: 1 });
@@ -468,7 +486,12 @@ function buildUI() {
   $('#takeoff').onclick = () => flies.find(x => x.id === selected)?.worker.postMessage({ type: 'takeoff' });
   buildAgentUI();
   buildScaffoldUI();
-  setInterval(() => { if (foodDirty) { foodDirty = false; syncEnv(); envGroup.children.forEach(m => { if (m.userData.food) m.material.opacity = 0.35 + 0.65 * Math.min(1, m.userData.food.amount / 5); }); } renderFlyList(); }, 500);
+  setInterval(() => {
+    const expiry = applyArenaAction(env, { tool: 'nothing' }, { nowMs: performance.now() });
+    if (expiry.changed) { Object.assign(env, expiry.env); rebuildEnv(); syncEnv(); }
+    if (foodDirty) { foodDirty = false; syncEnv(); envGroup.children.forEach(m => { if (m.userData.food) m.material.opacity = 0.35 + 0.65 * Math.min(1, m.userData.food.amount / 5); }); }
+    renderFlyList();
+  }, 500);
 }
 
 function buildAgentUI() {
@@ -480,7 +503,7 @@ function buildAgentUI() {
   $('#narrationToggle')?.addEventListener('click', toggleNarration);
   updateNarrationUI();
   renderNarrationHistory();
-  list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span class="terminal-name" title="${agent.id} · ${agent.backend}"><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id}<small>${agent.backend}</small></span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}" title="Synthetic touch for debugging / デバッグ用の疑似接触">call now${ja('今すぐ呼ぶ')}</button>` : ''}</div>`).join('');
+  list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span class="terminal-name" title="${agent.id} · ${agent.backend}"><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id}<small>${agent.kind || ''} · ${agent.backend}</small></span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}" title="Synthetic touch for debugging / デバッグ用の疑似接触">call now${ja('今すぐ呼ぶ')}</button>` : ''}</div>`).join('');
   list.querySelectorAll('[data-debug-terminal]').forEach(button => {
     button.onclick = () => sendDebugTouch(button.dataset.debugTerminal);
   });
@@ -588,7 +611,7 @@ function onActivity(f, m) {
     cx.fillStyle = '#5b6472'; cx.font = '11px system-ui, sans-serif'; cx.textAlign = 'center';
     cx.fillText('vision off', 84, 62);
   });
-  if (narrationEnabled && agentBridge && m.groups && typeof m.groups.length === 'number' && f.last) {
+  if (agentBridge && m.groups && typeof m.groups.length === 'number' && f.last) {
     const narrator = narrators.get(f.id) || new NeuralNarrator({ agentId: f.id, intervalMs: NARRATE_INTERVAL });
     narrators.set(f.id, narrator);
     const event = narrator.maybeNarrate({
@@ -602,6 +625,7 @@ function onActivity(f, m) {
       alive: f.last.alive,
       recent_behaviors: [],
     }, m.groups, Date.now());
+    agentBridge.setBrainState(f.id, narrator.brainState);
     if (event) agentBridge.narrate(event);
   }
 }

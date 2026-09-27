@@ -71,6 +71,17 @@ function narratePayload(extra = {}) {
   });
 }
 
+function requestPayload(extra = {}) {
+  return {
+    event: 'request', agent_id: 0, t_ms: 1000, terminal_id: 'ollama', request_kind: 'feed', request_text: '食べ物を出して',
+    state: { behavior: 'standing', energy: 0.4, pos: [0, 0, 0.13], yaw: 0, flying: false },
+    recent_behaviors: ['walking', 'standing'],
+    state_table: [{ fact: '空腹', value: '強い' }, { fact: '体の動き', value: '止まっている' }],
+    arena: { pose: { x: 0, y: 0, yaw: 0 }, items: [{ type: 'bitter', x: 1, y: 1, r: 0.2 }] },
+    ...extra,
+  };
+}
+
 test('narrate validation clamps signal ranges and strips unknown fields', () => {
   const clean = validateEventPayload(narratePayload({ unknown: 'drop' }));
   assert.deepEqual(clean.signals, [{ group: 'smell', hz_left: 1000, hz_right: 0, baseline: 10, salience: 50, asymmetry: -1 }]);
@@ -133,6 +144,22 @@ test('mock WebSocket round trip and whitelist field stripping', async (t) => {
   assert.match(seenPrompt, /検証済みイベントJSON/);
   assert.match(seenPrompt, /"pos":\[0.4,-1.1,0.2\]/);
   assert.doesNotMatch(seenPrompt, /unknown|extra/);
+});
+
+test('request mock returns a validated arena tool action', async (t) => {
+  const { server, tempDir } = await makeServer();
+  t.after(async () => { await server.close(); await rm(tempDir, { recursive: true, force: true }); });
+  const result = await sendAndReceive(server.port, request('tool', 'mock', requestPayload()));
+  assert.equal(result.type, 'reply');
+  assert.deepEqual(result.action, { tool: 'place_sugar', near: 'fly', distance: 0.3, amount: 1 });
+  assert.equal(result.valence, undefined);
+});
+
+test('request backend reduces invalid LLM tool output to nothing', async (t) => {
+  const { server, tempDir } = await makeServer({ backendOverrides: { ollama: () => JSON.stringify({ action: { tool: 'delete_brain' }, text: '危険' }) } });
+  t.after(async () => { await server.close(); await rm(tempDir, { recursive: true, force: true }); });
+  const result = await sendAndReceive(server.port, request('invalid-tool', 'ollama', requestPayload()));
+  assert.deepEqual(result.action, { tool: 'nothing' });
 });
 
 test('rejects non-local origins', async (t) => {
