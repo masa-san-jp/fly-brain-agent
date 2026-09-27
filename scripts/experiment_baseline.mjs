@@ -114,6 +114,8 @@ export async function runOne({ condition, seed, seconds, sampleMs = 20, vision =
   try {
     for (let step = 1; step <= steps; step += 1) {
       fly.step();
+      // Terminal sugar never runs out, as in the arena page (src/arena.js refills agentId patches).
+      for (const food of env.food) if (food.agentId) food.amount = food.maxAmount ?? food.initialAmount ?? food.amount;
       const pose = poseOf(fly);
       if (firstMeal === null && (fly.eaten > 0 || pose.behavior === 'feeding')) firstMeal = fly.t / 1000;
       while (fly.t >= nextEnergy) { energyTrajectory.push({ t: nextEnergy / 1000, energy: fly.energy }); nextEnergy += 1000; }

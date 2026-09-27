@@ -57,3 +57,20 @@ paired comparison（llm−control）は、llm vs random が food 0.0000、min en
 - `scripts/check_experiment_baseline.mjs`, `tests/arena-tools.test.js`, bridge/E2E tests
 
 禁止対象の `src/sim/fly.js`, `intrinsic.js`, `motor.js`, `senses.js`, `scaffold/`, worker、brain、`src/mb/`、`.bend` は変更していない。コミットは作成していない。
+
+## 本実験 1（2026-09-27、N=6 × 180秒 × 4条件、視覚あり）
+
+実行：`node scripts/experiment_baseline.mjs --flies=6 --seconds=180 --conditions=llm,random,none,oracle --workers=12 --vision=1`（実際は8並列、実時間 2時間18分）。ハエは未改変（決定事項7）。結果：`scratch/experiment-baseline-main.jsonl`。
+
+| 条件 | 生存（6匹中） | 摂食量 平均±SD | 最低エネルギー 平均±SD | エージェントの行動 |
+|---|---:|---:|---:|---|
+| llm | 4 | 0.876 ± 0.630 | 0.109 ± 0.131 | 砂糖5、何もしない12 |
+| none | 3 | 0.760 ± 0.772 | 0.109 ± 0.130 | （何もしない14） |
+| random | 2 | 0.537 ± 0.559 | 0.133 ± 0.200 | 砂糖3、匂い3、何もしない3 |
+| oracle | 1 | 0.493 ± 0.456 | 0.025 ± 0.055 | 砂糖14 |
+
+- 生存の差はどれも有意ではない（Fisher の正確検定：llm vs random p=0.57、vs none p=1.0、vs oracle p=0.24）。
+- 同じ種でも、環境が一度変わると軌跡はその時点（18〜64秒）から分岐する。シミュレーションはカオス的で、6匹では条件の効果より分岐による偶然のばらつきが大きい。環境を最も多く変える oracle が最も偶然に左右される。
+- LLM は依頼の約7割に「何もしない」を返した（受け身）。
+- この実験で分かったのは「この規模では判定できない」こと。検出力を得るには、条件あたり数十匹が必要。
+- 不具合：この回の headless ランナーは端末の糖を補充していなかった（画面版は補充）。以後のランナーは毎ステップ補充する。本実験 1 の数値はこの不具合込み。

@@ -41,8 +41,9 @@ test('agents arena mock loop and continuous narration work in Playwright', async
     await page.waitForFunction(() => window.__arena?.flies?.[0]?.last, null, { timeout: 120_000 });
     await page.locator('[data-debug-terminal="ollama"]').click({ force: true });
     await page.waitForFunction(() => !document.querySelector('#agentBubble')?.hidden, null, { timeout: 15_000 });
-    const bubble = await page.locator('#agentBubble').textContent();
-    assert.match(bubble, /近くに食べ物を出すね|砂糖を配置|左から何かいい匂いがする/);
+    // The bubble may already show a reply to the fly's own behaviour (e.g. found_food), so check
+    // the agent's action where it lands: an agent-placed sugar patch in the arena.
+    await page.waitForFunction(() => window.__arena.env.food.some(food => food.agentPlaced), null, { timeout: 15_000 });
     await page.waitForFunction(() => window.__arena.env.food.some(food => food.agentPlaced), null, { timeout: 5_000 });
     const placed = await page.evaluate(() => window.__arena.env.food.some(food => food.agentPlaced));
     assert.equal(placed, true);
