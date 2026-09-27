@@ -185,7 +185,7 @@ export class HumanoidRenderer {
     if (!next) return;
     if (instance.actionKey !== desired) {
       const previous = instance.actions.get(instance.actionKey);
-      next.reset().setEffectiveTimeScale(1).setEffectiveWeight(1).play();
+      next.reset().setEffectiveTimeScale(selection.playbackRate ?? 1).setEffectiveWeight(1).play();
       if (previous && previous !== next) next.crossFadeFrom(previous, CROSS_FADE_SECONDS, true);
       instance.actionKey = desired;
       instance.fadeRemaining = CROSS_FADE_SECONDS;
@@ -198,14 +198,14 @@ export class HumanoidRenderer {
         const action = instance.actions.get(key); if (!action) continue;
         const weight = selection.blend?.[key] || 0;
         action.enabled = weight > 0;
-        action.setEffectiveWeight(weight);
+        action.setEffectiveWeight(weight).setEffectiveTimeScale(selection.playbackRate ?? 1);
         if (weight > 0 && !action.isRunning()) action.play();
       }
     } else {
       for (const [key, action] of instance.actions) {
         const active = key === desired;
         action.enabled = active;
-        action.setEffectiveWeight(active ? 1 : 0);
+        action.setEffectiveWeight(active ? 1 : 0).setEffectiveTimeScale(active ? (selection.playbackRate ?? 1) : 1);
       }
     }
   }
@@ -217,9 +217,21 @@ export class HumanoidRenderer {
     instance.root.position.set(p[0], p[1], p[2]);
     const yaw = previous?.yaw !== undefined && blend < 1 ? lerpAngle(previous.yaw, pose.yaw || 0, blend) : (pose.yaw || 0);
     instance.heading.rotation.z = yaw + Math.PI / 2;
-    const dt = instance.lastTime == null ? 0 : Math.min(0.05, Math.max(0, (now - instance.lastTime) / 1000));
+    const wallDt = instance.lastTime == null ? 0 : Math.max(0, (now - instance.lastTime) / 1000);
+    const dt = Math.min(0.05, wallDt);
     instance.lastTime = now;
-    const selection = selectAnim(pose, instance.animationState);
+    // On-screen ground speed: displacement of the rendered root per wall-clock
+    // second, signed by the heading, smoothed over ~0.4 s of wall time.
+    let groundSpeed = instance.groundSpeed || 0;
+    if (instance.lastRootXY && wallDt > 0) {
+      const dx = p[0] - instance.lastRootXY[0], dy = p[1] - instance.lastRootXY[1];
+      const forward = dx * Math.cos(yaw) + dy * Math.sin(yaw);
+      const raw = Math.hypot(dx, dy) / wallDt * (forward < -0.5 * Math.hypot(dx, dy) ? -1 : 1);
+      groundSpeed += (raw - groundSpeed) * Math.min(1, wallDt / 0.4);
+    }
+    instance.lastRootXY = [p[0], p[1]];
+    instance.groundSpeed = groundSpeed;
+    const selection = selectAnim({ ...pose, groundSpeed }, instance.animationState);
     instance.animationState = selection;
     this.setAnimation(instance, selection, dt);
     instance.mixer?.update(dt);

@@ -58,11 +58,24 @@ export class FlyAgent {
     // one scaffold set for the whole animal: every non-graph mechanism (stepping generator, escape
     // gate, bout scheduler, ...) is a plugin from src/sim/scaffold/, switched by brainOpts.scaffolds
     // and listed in this.scaffoldManifest for the ledger.
-    this.setScaffolds(brainOpts.scaffolds, brainOpts.scaffoldParams);
+    // Humanoid presentation is opt-in. Give only that mode longer walking bouts,
+    // shorter idle/feed bouts, and a modestly stronger forward scaffold drive.
+    // The ordinary arena keeps the original parameter table byte-for-byte.
+    const humanoidParams = this.humanoidMode ? {
+      boutScheduler: { walkBout: [4.0, 0.75], stopBout: [0.65, 0.55], groomBout: [1.2, 0.35], pGroom: 0.06,
+        saccadeRate: 0.9, standSaccadeRate: 0.45, pTakeoff: 0 },
+      feedingStop: { feedBout: [2.8, 0.4], satiety: 0.5, searchMs: 7000, searchTurns: 4 },
+    } : {};
+    const scaffoldParams = { ...(brainOpts.scaffoldParams || {}) };
+    for (const [id, params] of Object.entries(humanoidParams)) scaffoldParams[id] = { ...params, ...(scaffoldParams[id] || {}) };
+    this.intrinsicParams = this.humanoidMode ? { ...INTRINSIC, fwdDrive: 16, ...(brainOpts.scaffoldParams?.intrinsic || {}) } : INTRINSIC;
+    if (this.intrinsic) this.intrinsic.params = this.intrinsicParams;
+    this.setScaffolds(brainOpts.scaffolds, scaffoldParams);
     this.flights = 0;
     this.driven = new Int32Array(0);
     // physiology
-    this.energy = 0.6; this.health = 1; this.alive = true; this.eaten = 0; this.t = 0; this.foodEaten = env.food.map(() => 0); this.dist = 0; this.jumps = 0; this._lastPos = null; this._wasJumping = false;
+    const initialEnergy = this.humanoidMode ? (brainOpts.humanoidInitialEnergy ?? 0.32) : 0.6;
+    this.energy = Math.max(0, Math.min(1, initialEnergy)); this.health = 1; this.alive = true; this.eaten = 0; this.t = 0; this.foodEaten = env.food.map(() => 0); this.dist = 0; this.jumps = 0; this._lastPos = null; this._wasJumping = false;
     this.others = [];   // [{x,y,yaw}] of other flies (set by the host)
     this.log = [];
     this.takeoffPending = false;
@@ -88,9 +101,9 @@ export class FlyAgent {
     this.motor.scaffolds = this.scaffolds;
     if (this.intrinsic) this.intrinsic.scaffolds = this.scaffolds;
     bindScaffoldParams(this.scaffolds, 'READOUT', READOUT);
-    bindScaffoldParams(this.scaffolds, 'INTRINSIC', INTRINSIC);
+    bindScaffoldParams(this.scaffolds, 'INTRINSIC', this.intrinsicParams || INTRINSIC);
     for (const p of Object.values(this.scaffolds)) p?.setup?.(this);
-    this.scaffoldManifest = scaffoldManifest(this.scaffolds, { INTRINSIC, READOUT });
+    this.scaffoldManifest = scaffoldManifest(this.scaffolds, { INTRINSIC: this.intrinsicParams || INTRINSIC, READOUT });
   }
   state() {
     const d = this.mjd, xp = d.xpos, B = this.bid;

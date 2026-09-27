@@ -21,15 +21,24 @@ function previousKey(prevState) {
   return prevState?.state ?? null;
 }
 
-function locomotionWeights(v) {
-  // v is the brain's forward command, not a world-space displacement.  The
-  // triangular weights make the three UAL clips meet at walk/jog/sprint speeds.
-  const x = clamp((v - 0.05) / 0.95, 0, 1);
-  return Object.freeze({
-    walk: clamp(1 - x * 2, 0, 1),
-    jog: x <= 0.5 ? x * 2 : (1 - x) * 2,
-    sprint: clamp((x - 0.5) * 2, 0, 1),
-  });
+// Speeds are what the viewer sees: arena units per wall-clock second of the
+// rendered root (the simulation runs well below real time, so simulated cm/s
+// would pick a sprint while the avatar barely moves). The avatar is 0.3 units
+// tall, so with a 1.6 m human 1 m ≈ 0.19 units: walk ≈ 1.4 m/s, jog ≈ 3 m/s,
+// sprint ≈ 6 m/s. Below MOVE_SPEED (≈ 0.1 m/s) the avatar stands.
+const UNITS_PER_METRE = 0.3 / 1.6;
+const MOVE_SPEED = 0.1 * UNITS_PER_METRE;
+const CLIP_SPEED = Object.freeze({ walk: 1.4 * UNITS_PER_METRE, jog: 3 * UNITS_PER_METRE, sprint: 6 * UNITS_PER_METRE });
+const WALK_SPEED = MOVE_SPEED;
+const SPRINT_SPEED = CLIP_SPEED.sprint;
+
+function locomotionWeights(speed) {
+  // Triangular weights meeting at the three clips' natural speeds.
+  const v = Math.abs(speed);
+  if (v <= CLIP_SPEED.walk) return Object.freeze({ walk: 1, jog: 0, sprint: 0 });
+  if (v <= CLIP_SPEED.jog) { const x = (v - CLIP_SPEED.walk) / (CLIP_SPEED.jog - CLIP_SPEED.walk); return Object.freeze({ walk: 1 - x, jog: x, sprint: 0 }); }
+  const x = clamp((v - CLIP_SPEED.jog) / (CLIP_SPEED.sprint - CLIP_SPEED.jog), 0, 1);
+  return Object.freeze({ walk: 0, jog: 1 - x, sprint: x });
 }
 
 function dominantLocomotion(weights) {
@@ -62,7 +71,7 @@ function result(pose, prevState, state, action, extra = {}) {
 export function selectAnim(pose = {}, prevState = null) {
   const behavior = String(pose.behavior ?? '');
   const cmd = pose.cmd || {};
-  const v = numberOr(cmd.v);
+  const groundSpeed = numberOr(pose.groundSpeed);
 
   // Priority 1: death always wins, even if the final pose still carries a
   // locomotor command or a stale behaviour label.
@@ -85,16 +94,22 @@ export function selectAnim(pose = {}, prevState = null) {
   // Priority 5: grooming is driven by the command flag, not by a label.
   if (Boolean(cmd.grooming)) return result(pose, prevState, 'grooming', 'rubFace', { clip: 'rubFace' });
 
-  // Priorities 6–7: signed forward command controls backward walking and a
-  // continuous walk/jog/sprint blend.  Turn is intentionally absent here.
-  if (v < -0.05) return result(pose, prevState, 'backWalk', 'backWalk', { clip: 'backWalk', speed: v });
-  if (v > 0.05) {
-    const blend = locomotionWeights(v);
-    return result(pose, prevState, 'locomotion', dominantLocomotion(blend), { clip: 'locomotion', blend, speed: v });
+  // Priorities 6–7: signed measured ground speed controls backward walking and
+  // a continuous walk/jog/sprint blend. A high command with no displacement is
+  // deliberately idle, preventing an avatar from running in place.
+  // Playback follows the on-screen speed so the feet roughly match the ground
+  // (a slow simulation shows a slow walk rather than running on the spot).
+  if (groundSpeed < -MOVE_SPEED) return result(pose, prevState, 'backWalk', 'backWalk', { clip: 'backWalk', speed: groundSpeed,
+    playbackRate: clamp(Math.abs(groundSpeed) / CLIP_SPEED.walk, 0.25, 1.5) });
+  if (groundSpeed > MOVE_SPEED) {
+    const blend = locomotionWeights(groundSpeed);
+    const dominant = dominantLocomotion(blend);
+    return result(pose, prevState, 'locomotion', dominant, { clip: 'locomotion', blend, speed: groundSpeed,
+      playbackRate: clamp(groundSpeed / CLIP_SPEED[dominant], 0.25, 1.5) });
   }
 
   // Priority 8: both standing and proboscis extended are idle.
   return result(pose, prevState, 'idle', 'idle', { clip: 'idle' });
 }
 
-export { locomotionWeights };
+export { locomotionWeights, WALK_SPEED, SPRINT_SPEED, MOVE_SPEED, CLIP_SPEED };

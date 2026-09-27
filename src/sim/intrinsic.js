@@ -66,7 +66,7 @@ export class Intrinsic {
     // hunger gates feeding. Starved flies also walk more (Yang et al. 2015): the behavioural arousal
     // is the oaArousalRule plugin's signal (ctx.arousal from the OA neurons, else the energy deficit);
     // with it off the neutral 0.5 below means starvation changes nothing about locomotion
-    const P = INTRINSIC, hunger = Math.max(0, Math.min(1, (0.7 - ctx.energy) / 0.6));
+    const P = this.params || INTRINSIC, hunger = Math.max(0, Math.min(1, (0.7 - ctx.energy) / 0.6));
     const arousal = this.scaffolds.oaArousalRule ? this.scaffolds.oaArousalRule.level(ctx, hunger) : 0.5;
     // obstacle at the front. Head-on (both antennae within 150 ms, or the body rearing up against it): stop,
     // back off, pivot away, walk on. One antenna grazing: turn away while walking, which is how flies come to

@@ -36,7 +36,7 @@ test('agents arena debug touch closes the mock loop in Playwright', async () => 
     browser = await chromium.launch({ headless: true });
     await waitForHttp('http://127.0.0.1:4173/arena.html', vite, 30_000);
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(`http://127.0.0.1:4173/arena.html?env=agents&avatar=vrm&bridge=ws://127.0.0.1:${bridge.port}&touch=debug&flies=1&vision=0&gpu=0`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.goto(`http://127.0.0.1:4173/arena.html?env=agents&avatar=vrm&bridge=ws://127.0.0.1:${bridge.port}&touch=debug&flies=1&vision=0&gpu=0&run=0`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForFunction(() => window.__arena?.flies?.[0]?.last, null, { timeout: 120_000 });
     await page.locator('[data-debug-terminal="ollama"]').click();
     await page.waitForFunction(() => !document.querySelector('#agentBubble')?.hidden, null, { timeout: 15_000 });
