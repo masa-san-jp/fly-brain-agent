@@ -1,37 +1,42 @@
-// Headless terminal attraction check. This follows scripts/run_fly.mjs's Node setup,
-// but records terminal occupancy, qualifying visits, and first arrival.
+// Headless terminal-attraction check using the same FlyAgent brain options as arena.js.
+// Vision is ON by default; use --vision=0 only for an explicit ablation.
 // Usage: node scripts/check_terminals.mjs [--flies=2] [--seconds=5] [--sample-ms=10]
+//   [--config-json='{"agents":[...]}'] [--vision=0] [--out=path]
 import fs from 'node:fs';
 import fsPromises from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import loadMujoco from '@mujoco/mujoco';
 import { loadAll, loadNeuromod } from './lib_node.mjs';
 import { FlyAgent } from '../src/sim/fly.js';
 import { PRESETS } from '../src/sim/world.js';
-import { allocBrainMemory, attachBrain } from '../src/brainsetup.js';
+import { expandAgents } from '../src/agents/terminals.js';
+import { allocBrainMemory, attachBrain, attachEyes } from '../src/brainsetup.js';
+import { parseFlyVis } from '../src/flyvis.js';
 
-const args = Object.fromEntries(process.argv.slice(2).map(value => value.replace(/^--/, '').split('=')));
-const N = Math.max(1, Number(args.flies || 2));
-const seconds = Math.max(1, Number(args.seconds || 5));
-const sampleMs = Math.max(1, Number(args['sample-ms'] || 10));
-const outPath = args.out || 'scratch/terminals-results.json';
-const DWELL_MS = 300;
+export const DWELL_MS = 300;
 
-const D = loadAll();
-const data = { ...D, superclass: D.sc };
-const sizeBytes = fs.readFileSync('public/data/neuron_size.bin');
-const signBytes = fs.readFileSync('public/data/ntsign.bin');
-const size = new Float32Array(sizeBytes.buffer.slice(sizeBytes.byteOffset, sizeBytes.byteOffset + sizeBytes.byteLength));
-const sign = new Float32Array(signBytes.buffer.slice(signBytes.byteOffset, signBytes.byteOffset + signBytes.byteLength));
-const gait = JSON.parse(fs.readFileSync('public/body/gait.json'));
-const flyXML = fs.readFileSync('public/body/fly_physics.xml', 'utf8');
-const calib = fs.existsSync('public/data/brain_params.json') ? JSON.parse(fs.readFileSync('public/data/brain_params.json')) : { wSyn: 0.4 };
-const wasmBytes = fs.readFileSync('public/lif.wasm');
-const mj = await loadMujoco();
+function cliArgs(argv = process.argv.slice(2)) {
+  return Object.fromEntries(argv.map(value => {
+    const [key, ...rest] = value.replace(/^--/, '').split('=');
+    return [key, rest.join('=') || 'true'];
+  }));
+}
 
-function conditionEnv(withOdor) {
-  const env = PRESETS.agents.env();
-  if (!withOdor) env.odors = [];
-  return env;
+function readAssetFloat(file) {
+  const bytes = fs.readFileSync(file);
+  return new Float32Array(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+}
+
+export function makeAgentEnv(configJson) {
+  const presetEnv = PRESETS.agents.env();
+  if (!configJson) return presetEnv;
+  const config = typeof configJson === 'string' ? JSON.parse(configJson) : configJson;
+  const env = structuredClone(presetEnv);
+  env.food = [];
+  env.odors = [];
+  env.agents = structuredClone(config.agents ?? env.agents);
+  return expandAgents(env);
 }
 
 function makeTrackers(env) {
@@ -58,15 +63,34 @@ function sampleTrackers(trackers, env, x, y, fromMs, toMs) {
   }
 }
 
-async function runOne({ withOdor, energy, replicate }) {
-  const env = conditionEnv(withOdor);
-  const brainOpts = { ...calib, gpu: false };
-  const memory = allocBrainMemory(data, size, sign, brainOpts, 1, null);
+function finishTrackers(trackers, seconds, steps) {
+  for (const tracker of trackers.values()) {
+    if (tracker.inside && steps - tracker.enteredAt >= DWELL_MS) tracker.visits++;
+    tracker.fractionWithin = tracker.withinMs / steps;
+    tracker.visitsPerFlyMinute = tracker.visits / (seconds / 60);
+    delete tracker.inside;
+    delete tracker.enteredAt;
+  }
+  return [...trackers.values()];
+}
+
+export async function runOne({ env, seconds, sampleMs, replicate, vision = true, data, size, sign, gait, flyXML, calib, wasmBytes, mj }) {
+  const brainOpts = { ...calib, gpu: false }; // arena brain parameters; headless backend only
+  let visionModel = null;
+  let flyvis = null;
+  if (vision) {
+    const bin = fs.readFileSync('public/vision/flyvis.bin');
+    visionModel = { model: parseFlyVis(bin.buffer.slice(bin.byteOffset, bin.byteOffset + bin.byteLength),
+      JSON.parse(fs.readFileSync('public/vision/flyvis.json')),
+      JSON.parse(fs.readFileSync('public/vision/flyvis_inputs.json'))),
+    map: JSON.parse(fs.readFileSync('public/vision/flyvis_map.json')) };
+  }
+  const memory = allocBrainMemory(data, size, sign, brainOpts, 1, visionModel);
   const brain = await attachBrain(wasmBytes, memory, 0, data, 7 + replicate);
-  const fly = new FlyAgent({ mj, flyXML, env, data, size, sign, bodymap: D.bodymap, gait,
+  if (visionModel) flyvis = { eyes: attachEyes(brain.instance, memory, 0), map: visionModel.map, gain: 150 };
+  const fly = new FlyAgent({ mj, flyXML, env, data, size, sign, bodymap: data.bodymap, gait,
     id: replicate, seed: replicate, pos: PRESETS.agents.start.slice(0, 2), yaw: PRESETS.agents.start[2],
-    mode: 'descending', brainOpts, vision: false, brain, neuromod: loadNeuromod() });
-  fly.energy = energy;
+    mode: 'descending', brainOpts, vision, brain, flyvis, neuromod: loadNeuromod() });
   const trackers = makeTrackers(env);
   const steps = Math.round(seconds * 1000);
   let lastSample = 0;
@@ -80,50 +104,59 @@ async function runOne({ withOdor, energy, replicate }) {
         lastSample = step;
       }
     }
-    for (const tracker of trackers.values()) {
-      if (tracker.inside && steps - tracker.enteredAt >= DWELL_MS) tracker.visits++;
-      tracker.fractionWithin = tracker.withinMs / steps;
-      delete tracker.inside;
-      delete tracker.enteredAt;
-    }
-    return { withOdor, hunger: energy < 0.5 ? 'low' : 'high', energy, replicate, seconds, terminals: [...trackers.values()] };
+    const terminals = finishTrackers(trackers, seconds, steps);
+    return { replicate, seconds, terminals, bothVisited: terminals.every(t => t.visits > 0) };
   } finally {
     fly.dispose();
   }
 }
 
-const conditions = [
-  { name: 'odor-low', withOdor: true, energy: 0.2 },
-  { name: 'odor-high', withOdor: true, energy: 0.9 },
-  { name: 'control-low', withOdor: false, energy: 0.2 },
-  { name: 'control-high', withOdor: false, energy: 0.9 },
-];
-const runs = [];
-for (const condition of conditions) {
-  for (let replicate = 0; replicate < N; replicate++) {
-    const run = await runOne({ ...condition, replicate });
-    run.condition = condition.name;
-    runs.push(run);
+export async function runExperiment({ env, flies, seconds, sampleMs, vision = true, replicateStart = 0 }) {
+  const D = loadAll();
+  const data = { ...D, superclass: D.sc, bodymap: D.bodymap };
+  const size = readAssetFloat('public/data/neuron_size.bin');
+  const sign = readAssetFloat('public/data/ntsign.bin');
+  const gait = JSON.parse(fs.readFileSync('public/body/gait.json'));
+  const flyXML = fs.readFileSync('public/body/fly_physics.xml', 'utf8');
+  const calib = fs.existsSync('public/data/brain_params.json') ? JSON.parse(fs.readFileSync('public/data/brain_params.json')) : { wSyn: 0.4 };
+  const wasmBytes = fs.readFileSync('public/lif.wasm');
+  const mj = await loadMujoco();
+  const runs = [];
+  for (let replicate = replicateStart; replicate < replicateStart + flies; replicate++) {
+    runs.push(await runOne({ env, seconds, sampleMs, replicate, vision, data, size, sign, gait, flyXML, calib, wasmBytes, mj }));
   }
-}
-
-const summary = [];
-for (const condition of conditions) for (const agent of PRESETS.agents.env().agents) {
-  const rows = runs.filter(run => run.condition === condition.name).map(run => run.terminals.find(t => t.agentId === agent.id));
-  const arrivals = rows.filter(row => row.firstArrival !== null).map(row => row.firstArrival);
-  summary.push({ condition: condition.name, agentId: agent.id,
-    fractionWithin: rows.reduce((sum, row) => sum + row.fractionWithin, 0) / rows.length,
-    visits: rows.reduce((sum, row) => sum + row.visits, 0) / rows.length,
-    firstArrival: arrivals.length ? arrivals.reduce((sum, value) => sum + value, 0) / arrivals.length : null,
-    arrivedFraction: arrivals.length / rows.length,
+  const summary = env.agents.map(agent => {
+    const rows = runs.map(run => run.terminals.find(t => t.agentId === agent.id));
+    const arrivals = rows.filter(row => row.firstArrival !== null).map(row => row.firstArrival);
+    return { agentId: agent.id,
+      fractionWithin: rows.reduce((sum, row) => sum + row.fractionWithin, 0) / rows.length,
+      visits: rows.reduce((sum, row) => sum + row.visits, 0) / rows.length,
+      visitsPerFlyMinute: rows.reduce((sum, row) => sum + row.visitsPerFlyMinute, 0) / rows.length,
+      firstArrival: arrivals.length ? arrivals.reduce((sum, value) => sum + value, 0) / arrivals.length : null,
+      arrivedFraction: arrivals.length / rows.length,
+      dwellQualifiedFraction: rows.filter(row => row.visits > 0).length / rows.length,
+    };
   });
+  return { parameters: { flies, simulatedSeconds: seconds, sampleMs, dwellMs: DWELL_MS, vision, terminalConfig: env.agents }, runs, summary,
+    bothVisitedFraction: runs.filter(run => run.bothVisited).length / runs.length };
 }
 
-const report = { parameters: { flies: N, simulatedSeconds: seconds, sampleMs, dwellMs: DWELL_MS,
-  terminalConfig: PRESETS.agents.env().agents }, runs, summary };
-await fsPromises.mkdir(new URL('.', `file://${process.cwd()}/${outPath}`).pathname, { recursive: true }).catch(() => {});
-await fsPromises.writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`);
-console.log(`\nTerminal validation: N=${N} independent flies/condition, T=${seconds}s, sample=${sampleMs}ms, dwell>=${DWELL_MS}ms`);
-console.log('condition      terminal  fraction-within-r  visits/flight  first-arrival-s  arrived');
-for (const row of summary) console.log(`${row.condition.padEnd(14)} ${row.agentId.padEnd(8)} ${(row.fractionWithin * 100).toFixed(1).padStart(17)} ${(row.visits).toFixed(2).padStart(14)} ${(row.firstArrival ?? 'never').toString().padStart(16)} ${(row.arrivedFraction * 100).toFixed(0).padStart(7)}%`);
-console.log(`JSON ${outPath}`);
+async function main() {
+  const args = cliArgs();
+  const flies = Math.max(1, Number(args.flies || 2));
+  const seconds = Math.max(1, Number(args.seconds || 5));
+  const sampleMs = Math.max(1, Number(args['sample-ms'] || 10));
+  const replicateStart = Math.max(0, Number(args['replicate-start'] || 0));
+  const vision = !['0', 'false', 'off', 'no'].includes(String(args.vision || '1').toLowerCase());
+  const env = makeAgentEnv(args['config-json']);
+  const report = await runExperiment({ env, flies, seconds, sampleMs, vision, replicateStart });
+  const outPath = args.out || 'scratch/terminals-results.json';
+  await fsPromises.mkdir(path.dirname(outPath), { recursive: true });
+  await fsPromises.writeFile(outPath, `${JSON.stringify(report, null, 2)}\n`);
+  console.log(`\nTerminal validation: N=${flies} independent flies, T=${seconds}s, sample=${sampleMs}ms, dwell>=${DWELL_MS}ms, vision=${vision ? 'ON' : 'OFF'}`);
+  console.log('terminal  fraction-within  visits/fly-min  first-arrival-s  dwell-qualified  both-visited');
+  for (const row of report.summary) console.log(`${row.agentId.padEnd(8)} ${(row.fractionWithin * 100).toFixed(1).padStart(16)} ${(row.visitsPerFlyMinute).toFixed(2).padStart(15)} ${(row.firstArrival ?? 'never').toString().padStart(16)} ${(row.dwellQualifiedFraction * 100).toFixed(0).padStart(16)}% ${(report.bothVisitedFraction * 100).toFixed(0).padStart(12)}%`);
+  console.log(`JSON ${outPath}`);
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) await main();

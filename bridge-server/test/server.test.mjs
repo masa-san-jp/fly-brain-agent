@@ -59,6 +59,11 @@ function narratePayload(extra = {}) {
   return validPayload({
     event: 'narrate',
     state: { behavior: 'walking', energy: 0.6, pos: [0, 0, 0.13], yaw: 0, flying: false },
+    state_table: [
+      { fact: '匂い', value: '左から強まっている' },
+      { fact: '体の動き', value: '歩いている' },
+    ],
+    changed: ['匂い'],
     signals: [{ group: 'smell', hz_left: 1200, hz_right: -4, baseline: 10, salience: 80, asymmetry: -3, ignored: 'drop' }],
     top: ['smell'],
     previous_line: '左から匂いがする',
@@ -70,6 +75,11 @@ test('narrate validation clamps signal ranges and strips unknown fields', () => 
   const clean = validateEventPayload(narratePayload({ unknown: 'drop' }));
   assert.deepEqual(clean.signals, [{ group: 'smell', hz_left: 1000, hz_right: 0, baseline: 10, salience: 50, asymmetry: -1 }]);
   assert.equal(clean.previous_line, '左から匂いがする');
+  assert.deepEqual(clean.state_table, [
+    { fact: '匂い', value: '左から強まっている' },
+    { fact: '体の動き', value: '歩いている' },
+  ]);
+  assert.deepEqual(clean.changed, ['匂い']);
   assert.equal(Object.hasOwn(clean, 'unknown'), false);
 });
 
@@ -78,6 +88,9 @@ test('narrate validation rejects unknown groups and oversized signal lists', () 
   assert.throws(() => validateEventPayload(narratePayload({ signals: Array.from({ length: 13 }, (_, index) => ({ group: `g${index}`, hz_left: 1, hz_right: 1, baseline: 1, salience: 0, asymmetry: 0 })) })), /at most 12/);
   assert.throws(() => validateEventPayload(narratePayload({ top: ['smell', 'brain'] })), /known groups/);
   assert.throws(() => validateEventPayload(narratePayload({ previous_line: 'あ'.repeat(41) })), /40/);
+  assert.throws(() => validateEventPayload(narratePayload({ state_table: [{ fact: '妄想', value: 'ある' }] })), /unknown fact/);
+  assert.throws(() => validateEventPayload(narratePayload({ state_table: [{ fact: '匂い', value: 'いい感じ' }] })), /unknown value/);
+  assert.throws(() => validateEventPayload(narratePayload({ changed: ['妄想'] })), /known state_table facts/);
 });
 
 test('narrate mock round trip uses the narration prompt and keeps a narr- request shape', async (t) => {
@@ -91,9 +104,11 @@ test('narrate mock round trip uses the narration prompt and keeps a narr- reques
   assert.equal(result.type, 'reply');
   assert.equal(result.text, '左から何かいい匂いがする。');
   assert.equal(seenEvent.event, 'narrate');
-  assert.match(seenPrompt, /脳信号だけを根拠/);
+  assert.match(seenPrompt, /状態表だけを根拠/);
+  assert.match(seenPrompt, /前回の状態を現在の状態として再利用しない/);
   assert.match(seenPrompt, /前回の発話/);
   assert.doesNotMatch(seenPrompt, /ignored/);
+  assert.doesNotMatch(seenPrompt, /signals|hz_left|energy/);
 });
 
 test('mock WebSocket round trip and whitelist field stripping', async (t) => {

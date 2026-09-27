@@ -10,13 +10,16 @@ const narrateTemplate = readFileSync(narratePromptPath, 'utf8').trim();
 
 export function buildPrompt(validatedEvent) {
   const selectedTemplate = validatedEvent?.event === 'narrate' ? narrateTemplate : template;
+  const promptEvent = validatedEvent?.event === 'narrate'
+    ? { event: 'narrate', state_table: validatedEvent.state_table, changed: validatedEvent.changed, previous_line: validatedEvent.previous_line }
+    : validatedEvent;
   return [
     selectedTemplate,
     '',
     '検証済みイベントJSON:',
     '',
     '```json',
-    JSON.stringify(validatedEvent),
+    JSON.stringify(promptEvent),
     '```',
   ].join('\n');
 }

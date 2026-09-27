@@ -1,3 +1,5 @@
+import vocab from '../../src/agents/brainStateVocab.json' with { type: 'json' };
+
 const EVENTS = new Set([
   'touched_agent',
   'startled',
@@ -14,6 +16,9 @@ const GROUP_KEYS = Object.freeze([
   'groom', 'court', 'octopamine', 'feed',
 ]);
 const GROUP_KEY_SET = new Set(GROUP_KEYS);
+const BRAIN_STATE_FACTS = Object.freeze(Object.keys(vocab.facts));
+const BRAIN_STATE_FACT_SET = new Set(BRAIN_STATE_FACTS);
+const BRAIN_STATE_VALUES = new Map(BRAIN_STATE_FACTS.map((fact) => [fact, new Set(vocab.facts[fact])]));
 
 const MAX_IDENTIFIER_LENGTH = 64;
 const MAX_BEHAVIOR_LENGTH = 40;
@@ -83,6 +88,28 @@ function boundedNumber(value, field, low, high) {
 }
 
 function validateNarration(payload, clean) {
+  if (!Array.isArray(payload.state_table) || payload.state_table.length === 0 || payload.state_table.length > 8) {
+    throw new PayloadValidationError('state_table must contain one to eight items');
+  }
+  const facts = new Set();
+  clean.state_table = payload.state_table.map((item) => {
+    if (!isRecord(item) || !BRAIN_STATE_FACT_SET.has(item.fact)) {
+      throw new PayloadValidationError('state_table contains an unknown fact');
+    }
+    if (facts.has(item.fact)) throw new PayloadValidationError('state_table contains a duplicate fact');
+    if (typeof item.value !== 'string' || !BRAIN_STATE_VALUES.get(item.fact).has(item.value)) {
+      throw new PayloadValidationError('state_table contains an unknown value');
+    }
+    facts.add(item.fact);
+    return { fact: item.fact, value: item.value };
+  });
+  if (!Array.isArray(payload.changed) || payload.changed.length > 8 ||
+      payload.changed.some((fact) => !BRAIN_STATE_FACT_SET.has(fact)) ||
+      new Set(payload.changed).size !== payload.changed.length ||
+      payload.changed.some((fact) => !facts.has(fact))) {
+    throw new PayloadValidationError('changed must contain known state_table facts');
+  }
+  clean.changed = [...payload.changed];
   if (!Array.isArray(payload.signals) || payload.signals.length > 12) {
     throw new PayloadValidationError('signals must contain at most 12 items');
   }

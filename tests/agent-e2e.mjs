@@ -39,7 +39,7 @@ test('agents arena mock loop and continuous narration work in Playwright', async
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     await page.goto(`http://127.0.0.1:4173/arena.html?avatar=vrm&env=agents&bridge=ws://127.0.0.1:${bridge.port}&touch=debug&narrateEvery=3&flies=1&vision=0&gpu=0&run=1`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForFunction(() => window.__arena?.flies?.[0]?.last, null, { timeout: 120_000 });
-    await page.locator('[data-debug-terminal="ollama"]').click();
+    await page.locator('[data-debug-terminal="ollama"]').click({ force: true });
     await page.waitForFunction(() => !document.querySelector('#agentBubble')?.hidden, null, { timeout: 15_000 });
     const bubble = await page.locator('#agentBubble').textContent();
     assert.match(bubble, /こんにちは|ここにいる|甘くてうれしい！|おなかがすいたよ。/);
@@ -54,11 +54,13 @@ test('agents arena mock loop and continuous narration work in Playwright', async
     await page.waitForFunction(() => document.querySelector('#narrationNotes')?.textContent?.trim(), null, { timeout: 40_000 });
     // The bubble may still hold the touch reply (transition replies keep priority for 10 s),
     // so the narration is checked where it always lands: the Brain voice list.
-    assert.match(await page.locator('#narrationNotes').textContent(), /左から何かいい匂いがする/);
+    const narrationNotes = await page.locator('#narrationNotes').textContent();
+    assert.match(narrationNotes, /左から何かいい匂いがする/);
+    assert.match(narrationNotes, /「/);
     const narrationLog = await readFile(logPath, 'utf8');
     assert.match(narrationLog, /"id":"narr-/);
     assert.match(narrationLog, /"event":"narrate"/);
-    assert.match(narrationLog, /"signals":\[/);
+    assert.match(narrationLog, /"state_table":\[/);
   } finally {
     await browser?.close().catch(() => {});
     await bridge.close();

@@ -47,7 +47,7 @@ const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') ||
   (presetKey === 'agents' && HUMANOID_MODE ? 'ws://127.0.0.1:8787' : null);
 const DEBUG_TOUCH = new URLSearchParams(location.search).get('touch') === 'debug';
 const NARRATE_QUERY = new URLSearchParams(location.search).get('narrate');
-const NARRATE_INTERVAL = Math.max(250, Number(new URLSearchParams(location.search).get('narrateEvery')) * 1000 || 7_000);
+const NARRATE_INTERVAL = Math.max(250, Number(new URLSearchParams(location.search).get('narrateEvery')) * 1000 || 4_000);
 const NARRATION_AVAILABLE = HUMANOID_MODE && Boolean(BRIDGE_URL) && NARRATE_QUERY !== '0';
 const env = PRESET.env();
 const flies = [];          // {id, worker, group, bodies[], last, color, ready}
@@ -375,7 +375,7 @@ function handleBridgeReply({ reply, request }) {
   const fly = flies.find(item => item.id === event?.agent_id);
   if (event?.event === 'narrate') {
     narrators.get(event.agent_id)?.complete(reply.text);
-    addNarrationNote(fly, reply.text);
+    addNarrationNote(fly, reply.text, event.changed);
     if (fly) showSpeechBubble(fly, reply.text, { priority: 0 });
     return;
   }
@@ -399,9 +399,9 @@ function handleBridgeError({ error, request }) {
   }
 }
 
-function addNarrationNote(fly, text) {
+function addNarrationNote(fly, text, changed = []) {
   if (!text) return;
-  narrationHistory.unshift({ at: Date.now(), flyId: fly?.id, text });
+  narrationHistory.unshift({ at: Date.now(), flyId: fly?.id, text, changed: Array.isArray(changed) ? changed : [] });
   narrationHistory.splice(5);
   renderNarrationHistory();
 }
@@ -413,6 +413,15 @@ function renderNarrationHistory() {
     const item = document.createElement('li');
     const time = document.createElement('time'); time.textContent = new Date(note.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
     item.append(time, document.createTextNode(` ${note.text}`));
+    if (note.changed.length) {
+      const tags = document.createElement('span');
+      tags.style.cssText = 'margin-left:.4em;color:var(--dim);font-size:10px;letter-spacing:0;';
+      tags.textContent = note.changed.map(fact => ({
+        '空腹': '空腹', '匂い': '匂い↑', '味': '味', '視界': '視界',
+        '接近物': '接近', '気分/覚醒': '覚醒', '体の動き': '動き',
+      }[fact] || fact)).map(tag => `「${tag}」`).join(' ');
+      item.append(tags);
+    }
     list.append(item);
   }
 }
