@@ -84,7 +84,6 @@ async function main() {
   shared = { N: data.N, E: data.E, indptr: toShared(data.indptr), indices: toShared(data.indices), weights: toShared(data.weights), nt: toShared(data.nt),
     side: toShared(data.side), superclass: toShared(data.superclass), cls: toShared(data.cls), size: toShared(new Float32Array(sz)), sign: toShared(new Float32Array(sg)) };
   brainParams = { ...bp, neuromod: !!(bp.neuromod && nmc) };
-  if (HUMANOID_MODE) brainParams.humanoidMode = true;
   // the fitted self-motion cancel (spec S3) rides to the reafference plugin through scaffoldParams;
   // no file = unfitted model = inert channel
   if (reaf) brainParams.scaffoldParams = { ...(bp.scaffoldParams || {}), reafference: { ...(bp.scaffoldParams?.reafference || {}), model: reaf } };
@@ -457,7 +456,6 @@ function buildUI() {
   $('#wind').oninput = e => { const v = +e.target.value; $('#windv').textContent = v; env.wind = [v, 0]; syncEnv(); };
   $('#light').oninput = e => { env.light.sky = +e.target.value; scene.background = new THREE.Color().setHSL(0.6, 0.3, 0.02 + 0.05 * env.light.sky); syncEnv(); };
   $('#threat').onclick = () => launchThreat();
-  if (HUMANOID_MODE) $('#takeoff').hidden = true;
   $('#takeoff').onclick = () => flies.find(x => x.id === selected)?.worker.postMessage({ type: 'takeoff' });
   buildAgentUI();
   buildScaffoldUI();
