@@ -2,6 +2,7 @@
 // Every channel drives real connectome neurons (bodymap.json); transduction curves are simple, documented
 // physiology approximations (saturating concentration responses, contrast-adapting photoreceptors).
 import { createScaffoldSet } from './scaffold/index.js';
+import { RateMap } from './rates.js';
 export const ODORANTS = {
   // odor -> activated glomeruli (receptor neurons) with relative sensitivity
   vinegar: { DM1: 1.0, DM4: 0.8, VA2: 0.7, DP1m: 0.9, DM2: 0.5, VM2: 0.4, DL1: 0.3 },   // Or42b, Or59b, Or92a, Ir64a...
@@ -33,7 +34,7 @@ export class Senses {
       leg: { sugar: ['LgLG3', 'LgLG4', 'LgAG2'], bitter: ['LgAG1'], pheromone: ['LgLG1a', 'LgLG1b', 'LgLG2', 'LgLG5', 'LgLG6', 'LgLG7', 'LgLG8'] },
       peg: { sugar: ['dorsal_tpGRN'], fatty: ['claw_tpGRN'] },
     };
-    this.rates = new Map();   // neuron index -> rate (Hz) for this step
+    this.rates = new Map();   // replaced by RateMap when neuron count is bound
     // tactile bristles are rapidly adapting: burst at contact onset/offset (tau ~15 ms); only tarsal bristles
     // (a fixed ~25% subset of each leg's tactile neurons) touch the substrate
     this.tarsal = {}; this.touchPrev = {}; this.touchBurst = {};
@@ -43,6 +44,7 @@ export class Senses {
   }
   /** called once the brain metadata is available: map taste types to neuron indices per location */
   bindTypes(typeOf, sideOf, nerveLegOf) {
+    this.rates = new RateMap(typeOf.length);   // neuron index -> rate (Hz), in Map insertion order
     this.taste = { labellum: {}, peg: {}, legs: {} };
     const N = typeOf.length;
     for (const [tst, types] of Object.entries(this.tasteTypes.labellum)) this.taste.labellum[tst] = [...Array(N).keys()].filter(i => types.includes(typeOf[i]));
@@ -54,7 +56,8 @@ export class Senses {
     this.orn = {}; // glomerulus -> {left: idx[], right: idx[]}
     for (const s of this.bm.sensors) if (s.kind === 'odor') { (this.orn[s.glomerulus] ||= {})[s.antenna] = s.idx; }
   }
-  set(ix, hz) { for (const i of ix) { const r = this.rates.get(i) || 0; if (hz > r) this.rates.set(i, hz); } }
+  set(ix, hz) { this.rates.set(ix, hz); }
+  setOne(i, hz) { this.rates.setOne(i, hz); }
   static hill(c, k = 0.3, n = 1.5) { return c <= 0 ? 0 : Math.pow(c, n) / (Math.pow(c, n) + Math.pow(k, n)); }
 
   /** Compute all sensory rates for the current state. `st` holds positions from the physics step. */
@@ -131,7 +134,7 @@ export class Senses {
 function popCode(self, ix, q, lo, hi) {
   if (!ix || !ix.length || q === undefined) return;
   const n = ix.length, x = (q - lo) / (hi - lo), width = 0.25;
-  for (let k = 0; k < n; k++) { const pref = (k + 0.5) / n; const r = 120 * Math.exp(-((x - pref) ** 2) / (2 * width * width)); if (r > 5) self.set([ix[k]], r); }
+  for (let k = 0; k < n; k++) { const pref = (k + 0.5) / n; const r = 120 * Math.exp(-((x - pref) ** 2) / (2 * width * width)); if (r > 5) self.setOne(ix[k], r); }
 }
 
 // --- compound eye: one ray per photoreceptor, luminance -> contrast-adapting rates ---
@@ -175,7 +178,7 @@ export class CompoundEye {
       this.adapt[r] += k * (ll - this.adapt[r]);
       this.lum[r] = L;
       const rate = Math.max(0, Math.min(250, 40 + 90 * (ll - this.adapt[r])));
-      if (rate > 1) senses.set([this.idx[r]], rate);
+      if (rate > 1) senses.setOne(this.idx[r], rate);
     }
     return this.lum;
   }

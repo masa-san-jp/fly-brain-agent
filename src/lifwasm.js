@@ -2,6 +2,7 @@
 // Memory layout: one shared WebAssembly.Memory holds the read-only connectome once (indptr, indices,
 // weights, signs) followed by per-brain state blocks, so many flies (workers) share a single graph.
 import { DEFAULTS, EXC_SIGN } from './lif.js';
+import { OrderedIndexSet } from './ordered-index-set.js';
 
 const HDR = 192;
 const align = n => (n + 63) & ~63;
@@ -48,7 +49,7 @@ export class LIFWasm {
     this.drivenList = new Int32Array(buf, o, N); o += align(N * 4);
     this.end = o;
     this.dv = new DataView(buf, base, HDR);
-    this.graph = graph; this._drivenDirty = true; this.drivenSet = new Set();
+    this.graph = graph; this._drivenDirty = true; this.drivenSet = new OrderedIndexSet(N);
     this.reset(); this.bias.fill(0); this.thr.fill(0); this.drive.fill(0); this.drivenList.fill(0); this.t = 0; this._seed = (seed * 2654435761) >>> 0 || 1;
     this._writeHeader();
   }
@@ -67,9 +68,22 @@ export class LIFWasm {
     f(this.N * (p.bgRate || 0) * p.dt / 1000); f(p.bgAmp || 0); f(0); f(p.preInh || 0);
   }
   setBackground(rateHz, ampMv) { this.p.bgRate = rateHz; this.p.bgAmp = ampMv; this.dv.setFloat32(172, this.N * rateHz * this.p.dt / 1000, true); this.dv.setFloat32(176, ampMv, true); }
-  _syncDriven() { let n = 0; for (const i of this.drivenSet) this.drivenList[n++] = i; this.dv.setInt32(160, n, true); this._drivenDirty = false; }
-  setDriveOne(i, rate) { this.drive[i] = rate; if (rate > 0) { if (!this.drivenSet.has(i)) { this.drivenSet.add(i); this._drivenDirty = true; } } else if (this.drivenSet.delete(i)) this._drivenDirty = true; }
-  setDrive(ix, rate) { for (let k = 0; k < ix.length; k++) this.setDriveOne(ix[k], rate); }
+  _syncDriven() { const n = this.drivenSet.copyTo(this.drivenList); this.dv.setInt32(160, n, true); this._drivenDirty = false; }
+  setDriveOne(i, rate) {
+    if (this.drive[i] === rate) return;
+    this.drive[i] = rate;
+    if (rate > 0) { if (!this.drivenSet.has(i)) { this.drivenSet.add(i); this._drivenDirty = true; } }
+    else if (this.drivenSet.delete(i)) this._drivenDirty = true;
+  }
+  setDrive(ix, rate) {
+    for (let k = 0; k < ix.length; k++) {
+      const i = ix[k];
+      if (this.drive[i] === rate) continue;
+      this.drive[i] = rate;
+      if (rate > 0) { if (!this.drivenSet.has(i)) { this.drivenSet.add(i); this._drivenDirty = true; } }
+      else if (this.drivenSet.delete(i)) this._drivenDirty = true;
+    }
+  }
   setBias(ix, mv) { for (let k = 0; k < ix.length; k++) this.bias[ix[k]] = mv; }
   setThr(i, mv) { this.thr[i] = mv; }
   addG(i, e, ii) { this.gE[i] += e; this.gI[i] += ii || 0; }

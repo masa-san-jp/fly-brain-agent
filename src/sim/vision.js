@@ -28,6 +28,7 @@ export class FlyVisionFV {
         this.photo.push(i); this.photoCol.push(s * this.nCol + best); }); }
     this.adapt = new Float32Array(this.photo.length).fill(NaN);
     this.lumEye = [new Float32Array(this.nCol), new Float32Array(this.nCol)];
+    this.one = [0];
     // resting activity of every model node under a uniform grey field: neurons are driven by deviations from rest
     const grey = new Float32Array(this.nCol).fill(0.5);
     if (vRest) {
@@ -63,7 +64,7 @@ export class FlyVisionFV {
     this.sample(env, albedo);
     for (let s = 0; s < 2; s++) { this.eyes[s].setInput(this.lumEye[s]); this.eyes[s].step(); }
     const g = this.gain;
-    for (let s = 0; s < 2; s++) { const v = this.eyes[s].v, P = this.pairs[s]; const one = [0];
+    for (let s = 0; s < 2; s++) { const v = this.eyes[s].v, P = this.pairs[s]; const one = this.one;
       const vr = this.vRest;
       for (let k = 0; k < P.neuron.length; k++) { const n = P.node[k]; const a = v[n] - vr[n];
         let rate = 0;
@@ -71,7 +72,7 @@ export class FlyVisionFV {
           const u = 200 - g * a, e = 0.05, inner = 200 - 0.5 * (u + Math.sqrt(u * u + e * e)), gate = 1 / (1 + Math.exp(-8000 * (a - 0.02))); rate = Math.max(0, inner * gate); }
         else if (a > 0.02) rate = Math.min(200, g * a);
         if (rate > 0) { one[0] = P.neuron[k]; set(one, rate); } } }
-    const ka = Math.min(1, dtMs / 300), one = [0];
+    const ka = Math.min(1, dtMs / 300), one = this.one;
     for (let k = 0; k < this.photo.length; k++) { const ll = Math.log(1e-3 + this.lum[this.photoCol[k]]); if (Number.isNaN(this.adapt[k])) this.adapt[k] = ll;
       this.adapt[k] += ka * (ll - this.adapt[k]); const rate = Math.max(0, Math.min(250, 40 + 90 * (ll - this.adapt[k]))); if (rate > 1) { one[0] = this.photo[k]; set(one, rate); } }
   }
