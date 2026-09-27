@@ -46,17 +46,12 @@ function dominantLocomotion(weights) {
 }
 
 function result(pose, prevState, state, action, extra = {}) {
-  const cmd = pose?.cmd || {};
-  const turn = clamp(numberOr(cmd.turn), -0.6, 0.6);
   return Object.freeze({
     state,
     action,
     previousState: previousKey(prevState),
     changed: previousKey(prevState) !== state,
     position: positionOf(pose),
-    // Turn never changes the locomotion decision.  HumanoidRenderer applies
-    // this small local twist after the selected clip has been evaluated.
-    upperTwist: turn * 0.16,
     ...extra,
   });
 }
@@ -79,8 +74,9 @@ export function selectAnim(pose = {}, prevState = null) {
   // deliberately idle, preventing an avatar from running in place.
   // Playback follows the on-screen speed so the feet roughly match the ground
   // (a slow simulation shows a slow walk rather than running on the spot).
+  // Backing up plays the walk cycle in reverse (negative rate).
   if (groundSpeed < -MOVE_SPEED) return result(pose, prevState, 'backWalk', 'backWalk', { clip: 'backWalk', speed: groundSpeed,
-    playbackRate: clamp(Math.abs(groundSpeed) / CLIP_SPEED.walk, 0.25, 1.5) });
+    playbackRate: -clamp(Math.abs(groundSpeed) / CLIP_SPEED.walk, 0.25, 1.5) });
   if (groundSpeed > MOVE_SPEED) {
     const blend = locomotionWeights(groundSpeed);
     const dominant = dominantLocomotion(blend);

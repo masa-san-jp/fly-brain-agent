@@ -448,7 +448,8 @@ function buildUI() {
   $('#addFemale').onclick = () => { const a = Math.random() * Math.PI * 2, r = Math.random() * env.arena.radius * 0.6; addFly([r * Math.cos(a), r * Math.sin(a)], Math.random() * Math.PI * 2, 'f'); };
   $('#speed').oninput = e => { speed = +e.target.value; $('#speedv').textContent = speed.toFixed(2) + '×'; for (const f of flies) f.worker.postMessage({ type: 'speed', speed }); };
   $('#preset').innerHTML = Object.entries(PRESETS).map(([k, p]) => `<option value="${k}" ${k === presetKey ? 'selected' : ''}>${p.label}${PRESET_JA[k] ? ` · ${PRESET_JA[k]}` : ''}</option>`).join('');
-  $('#preset').onchange = e => { location.search = '?env=' + e.target.value; };
+  // keep the other query options (avatar=vrm, bridge, narrate, …) when switching worlds
+  $('#preset').onchange = e => { const q = new URLSearchParams(location.search); q.set('env', e.target.value); location.search = q.toString(); };
   $('#mode').onchange = e => { for (const f of flies) f.worker.postMessage({ type: 'mode', mode: e.target.value }); };
   document.querySelectorAll('.tools button').forEach(b => b.onclick = () => { tool = b.dataset.tool; document.querySelectorAll('.tools button').forEach(x => x.classList.toggle('on', x === b)); });
   setupFolds();

@@ -64,12 +64,18 @@ test('priority 8: standing and proboscis extended both idle', () => {
   assert.equal(selectAnim(pose({ behavior: 'proboscis extended' })).state, 'idle');
 });
 
-test('turn changes only the upper-body twist and position is three-dimensional', () => {
+test('turning never twists the body and position is three-dimensional', () => {
   const selected = selectAnim(pose({ pos: [-1, 0.25, 0.125], groundSpeed: 0.15, cmd: { v: 0, turn: 0.6, grooming: false } }));
   assert.deepEqual(selected.position, [-1, 0.25, 0.125]);
-  assert.ok(selected.upperTwist > 0);
+  assert.equal(selected.upperTwist, undefined);
   const sameSpeedNoTurn = selectAnim(pose({ groundSpeed: 0.15, cmd: { v: 0, turn: 0, grooming: false } }));
   assert.deepEqual(selected.blend, sameSpeedNoTurn.blend);
+});
+
+test('backing up plays the walk cycle in reverse', () => {
+  const back = selectAnim(pose({ groundSpeed: -0.2, cmd: { v: -0.3, turn: 0, grooming: false } }));
+  assert.equal(back.action, 'backWalk');
+  assert.ok(back.playbackRate < 0);
 });
 
 test('selection is pure and reports the previous state without mutating it', () => {

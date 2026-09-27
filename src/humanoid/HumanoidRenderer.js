@@ -10,7 +10,6 @@ const AVATAR_HEIGHT = 0.3;
 const FLY_BODY_LENGTH = 0.025;
 const MAX_INTERPOLATION_LAG = FLY_BODY_LENGTH * 0.1;
 const CROSS_FADE_SECONDS = 0.2;
-const TWIST_AXIS = new THREE.Vector3(0, 1, 0);
 const DEFAULT_AVATAR = 'avatars/AvatarSample_A.vrm';
 const FALLBACK_AVATAR = 'avatars/VRM1_Constraint_Twist_Sample.vrm';
 const UAL_CLIP = 'animations/UAL1_Standard.glb';
@@ -97,6 +96,14 @@ export class HumanoidRenderer {
       const choose = (key, name) => { if (this.ualClips.has(name)) this.clips.set(key, this.ualClips.get(name)); };
       choose('idle', 'Idle_Loop'); choose('walk', 'Walk_Loop'); choose('jog', 'Jog_Fwd_Loop'); choose('sprint', 'Sprint_Loop');
       choose('crouch', 'Crouch_Idle_Loop'); choose('jump', 'Jump_Loop'); choose('death', 'Death01');
+      // Backing up = the walk cycle played in reverse (selectAnim gives a
+      // negative rate). A separate clip object so it gets its own action; the
+      // procedural fallback swings the arms from the T-pose rest and left them spread.
+      if (this.ualClips.has('Walk_Loop')) {
+        const reverse = this.ualClips.get('Walk_Loop').clone();
+        reverse.name = 'Walk_Loop_reverse';
+        this.clips.set('backWalk', reverse);
+      }
       this.animationLoaded = this.ualClips.size > 0;
       this.animationSource = this.animationLoaded ? 'ual+procedural' : 'procedural';
     } catch (error) {
@@ -172,7 +179,6 @@ export class HumanoidRenderer {
       else action.setLoop(THREE.LoopRepeat, Infinity);
       instance.actions.set(key, action);
     }
-    instance.twistBone = vrm.humanoid.getNormalizedBoneNode('upperChest') || vrm.humanoid.getNormalizedBoneNode('chest') || vrm.humanoid.getNormalizedBoneNode('spine');
     instance.ready = true;
     instance.root.userData.vrmLoaded = true;
     instance.root.updateMatrixWorld(true);
@@ -236,14 +242,6 @@ export class HumanoidRenderer {
     instance.animationState = selection;
     this.setAnimation(instance, selection, dt);
     instance.mixer?.update(dt);
-    if (instance.twistBone) {
-      instance.twistBaseQuaternion ||= new THREE.Quaternion();
-      instance.twistOffsetQuaternion ||= new THREE.Quaternion();
-      instance.twistBaseQuaternion.copy(instance.twistBone.quaternion);
-      instance.twistOffsetQuaternion.setFromAxisAngle(TWIST_AXIS, selection.upperTwist);
-      instance.twistBone.quaternion.copy(instance.twistBaseQuaternion)
-        .multiply(instance.twistOffsetQuaternion);
-    }
     // normalized rig → raw bones, then constraints and expressions. Spring
     // bones (hair/cloth) are left out: at the arena's ~0.19 avatar scale and
     // Z-up world they flare instead of hanging, so hair stays in its rest shape.
