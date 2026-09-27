@@ -51,9 +51,9 @@ test('agents arena mock loop and continuous narration work in Playwright', async
     assert.match(log, /"terminal_id":"ollama"/);
     assert.match(log, /"payload":/);
     await page.waitForFunction(() => document.querySelector('#narrationNotes')?.textContent?.trim(), null, { timeout: 40_000 });
-    // A transition reply may legitimately be the visible bubble because transition events
-    // have priority; the narration itself is also checked in the bridge log below.
-    assert.match(await page.locator('#agentBubble').textContent(), /左から何かいい匂いがする|甘くてうれしい！/);
+    // The bubble may still hold the touch reply (transition replies keep priority for 10 s),
+    // so the narration is checked where it always lands: the Brain voice list.
+    assert.match(await page.locator('#narrationNotes').textContent(), /左から何かいい匂いがする/);
     const narrationLog = await readFile(logPath, 'utf8');
     assert.match(narrationLog, /"id":"narr-/);
     assert.match(narrationLog, /"event":"narrate"/);
