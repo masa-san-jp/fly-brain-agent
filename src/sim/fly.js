@@ -57,7 +57,9 @@ export class FlyAgent {
     // and listed in this.scaffoldManifest for the ledger.
     this.setScaffolds(brainOpts.scaffolds, brainOpts.scaffoldParams);
     this.flights = 0;
-    this.driven = new Int32Array(0);
+    this.driven = [];
+    this._eyeRates = new Map();
+    this._eyeSink = { set: (ix, hz) => { for (let k = 0; k < ix.length; k++) this._eyeRates.set(ix[k], hz); } };
     // physiology
     this.energy = 0.6; this.health = 1; this.alive = true; this.eaten = 0; this.t = 0; this.foodEaten = env.food.map(() => 0); this.dist = 0; this.jumps = 0; this._lastPos = null; this._wasJumping = false;
     this.others = [];   // [{x,y,yaw}] of other flies (set by the host)
@@ -144,11 +146,11 @@ export class FlyAgent {
     if (th) { d.mocap_pos[tm] = th.x; d.mocap_pos[tm + 1] = th.y; d.mocap_pos[tm + 2] = th.z; } else if (d.mocap_pos[tm + 2] > -10) d.mocap_pos[tm + 2] = -20;
     const st = this.state();
     const rates = this.senses.update(st, this.env, 1); this._sugar = st.sugar;
-    if (this.eye && (this.t % 10 === 0)) { this._eyeRates = new Map(); const er = this._eyeRates; this.eye.update({ set: (ix, hz) => { for (const i of ix) er.set(i, hz); } }, this.env, 10, this.albedo); }
-    if (this.fv && (this.t % 20 === 0)) { this._eyeRates = new Map(); const er = this._eyeRates; this.fv.update((ix, hz) => { for (const i of ix) er.set(i, hz); }, this.env, this.albedo, 20); }
-    if (this._eyeRates) for (const [i, hz] of this._eyeRates) rates.set(i, hz);
+    if (this.eye && (this.t % 10 === 0)) { this._eyeRates.clear(); this.eye.update(this._eyeSink, this.env, 10, this.albedo); }
+    if (this.fv && (this.t % 20 === 0)) { this._eyeRates.clear(); this.fv.update(this._eyeSink.set, this.env, this.albedo, 20); }
+    if (this._eyeRates) for (const [i, hz] of this._eyeRates) rates.putOne(i, hz);
     // apply sensory drive (clear neurons no longer driven)
-    const B = this.brain; for (const i of this.driven) B.setDriveOne(i, 0);
+    const B = this.brain; for (let j = 0; j < this.driven.length; j++) B.setDriveOne(this.driven[j], 0);
     if (this.neuromod) this.neuromod.update(1, this.energy, this.flight.active ? 1 : this.motor.stepAmp || 0);
     // courtship context for a male: the nearest other fly's range and bearing in his head frame, plus the
     // connectome's own courtship-circuit readout (pIP10, DNp13) from the previous step
@@ -188,7 +190,8 @@ export class FlyAgent {
     if (this.intrinsic) this.intrinsic.update(1, B, { energy: this.energy, arousal: this.neuromod?.arousal, touch: st.antTouch, rearing: st.pitchUp > 0.45 && this.motor.jumpT < 0 && !this.motor.righting,
       heat: { left: heatAt(st.antenna.left, this.env), right: heatAt(st.antenna.right, this.env) }, sugar: this._sugar || 0, flying: this.flight.active, ahead: st.ahead, court, suitor,
       mouthOnFood: this.env.food.some(f => f.amount > 0 && Math.hypot(st.labellum[0] - f.x, st.labellum[1] - f.y) < f.r - 0.02) });
-    const nd = new Int32Array(rates.size); let k = 0; for (const [i, hz] of rates) { B.setDriveOne(i, hz); nd[k++] = i; } this.driven = nd;
+    this.driven.length = 0;
+    rates.forEach((hz, i) => { B.setDriveOne(i, hz); this.driven.push(i); });
     this.brain.step(); this.brain.step();
     // GF -> TTMn electrical synapse (not in the chemical connectome): GF spikes depolarise TTMn directly.
     // The `gfGap` scaffold plugin; off, the giant-fibre escape channel is closed.

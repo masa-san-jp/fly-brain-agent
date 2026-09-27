@@ -23,6 +23,7 @@
 // API mirrors LIFWasm: step(), setDriveOne/setDrive, setBias, setThr, addG, pulse, reset, setBackground,
 // plus the exposed arrays drive/spikeCount/trace/thr/bias (CPU shadows where the GPU owns the truth).
 import { DEFAULTS } from './lif.js';
+import { OrderedIndexSet } from './ordered-index-set.js';
 
 const WGSL = /* wgsl */`
 struct Hdr {
@@ -219,7 +220,7 @@ export class LIFGpu {
     b.spikeCount = new Uint32Array(N); b.trace = new Float32Array(N);
     b.drive = new Float32Array(N); b.thr = new Float32Array(N); b.bias = new Float32Array(N);
     b.v = new Float32Array(N).fill(p.vRest); b.gE = new Float32Array(N); b.gI = new Float32Array(N);   // compat shadows (unused)
-    b.drivenSet = new Set(); b._drivenDirty = true;
+    b.drivenSet = new OrderedIndexSet(N); b._drivenDirty = true; b._drivenUpload = new Int32Array(N);
     b._deltas = []; b._rng = (seed * 2654435761) >>> 0 || 1; b.t = 0; b.head = 0;
     b._lastFired = new Int32Array(0); b._lastSlot = 0;
     b._fireCap = Math.min(65536, N);   // fired-index readback is capped; step() still reports the true count
@@ -257,10 +258,11 @@ export class LIFGpu {
 
   _flushDriven() {
     if (!this._drivenDirty) return;
-    const list = new Int32Array(this.drivenSet.size); let k = 0; for (const i of this.drivenSet) list[k++] = i;
+    const n = this.drivenSet.copyTo(this._drivenUpload);
     const q = this.device.queue;
-    q.writeBuffer(this.buf.at, this._offs.drvOff * 4, list);
-    q.writeBuffer(this.buf.hdr, 20, new Uint32Array([this.drivenSet.size]));
+    if (n) q.writeBuffer(this.buf.at, this._offs.drvOff * 4, this._drivenUpload, 0, n * 4);
+    this._hd.setUint32(20, n, true);
+    q.writeBuffer(this.buf.hdr, 20, this._hdrBuf, 20, 4);
     this._drivenDirty = false;
   }
 
@@ -339,7 +341,7 @@ export class LIFGpu {
 
   get nAwake() { return this.N; }
   setDriveOne(i, rate) { if (this.drive[i] !== rate) { this.drive[i] = rate; this._pushDelta(i, DELTA_DRIVE, rate); } if (rate > 0) { if (!this.drivenSet.has(i)) { this.drivenSet.add(i); this._drivenDirty = true; } } else if (this.drivenSet.delete(i)) this._drivenDirty = true; }
-  setDrive(ix, rate) { for (const i of ix) this.setDriveOne(i, rate); }
+  setDrive(ix, rate) { for (let k = 0; k < ix.length; k++) this.setDriveOne(ix[k], rate); }
   setBias(ix, mv) { for (const i of ix) { this.bias[i] = mv; this._pushDelta(i, DELTA_BIAS, mv); } }
   setThr(i, mv) { if (this.thr[i] !== mv) { this.thr[i] = mv; this._pushDelta(i, DELTA_THR, mv); } }
   addG(i, e, ii) { if (e) this._pushDelta(i, DELTA_GE, e); if (ii) this._pushDelta(i, DELTA_GI, ii); }
