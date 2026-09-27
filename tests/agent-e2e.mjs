@@ -30,6 +30,7 @@ test('agents arena mock loop and continuous narration work in Playwright', async
   const vite = spawn(process.execPath, ['node_modules/vite/bin/vite.js', '--host', '127.0.0.1', '--port', '4173'], {
     cwd: root,
     stdio: 'ignore',
+    env: { ...process.env, VITE_CACHE_DIR: 'node_modules/.vite-e2e' },
   });
   let browser = null;
   try {

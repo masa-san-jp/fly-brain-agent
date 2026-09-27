@@ -14,6 +14,9 @@ const dropUnpacked = { name: 'drop-unpacked-data', apply: 'build', closeBundle()
 const isolation = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' };
 export default defineConfig({
   base: process.env.BASE_PATH || '/', // CI sets /fly-brain/ for GitHub Pages
+  // A test run's dev server gets its own dependency cache: two servers sharing node_modules/.vite
+  // re-optimize under each other and the page never finishes loading.
+  cacheDir: process.env.VITE_CACHE_DIR || 'node_modules/.vite',
   plugins: [dropUnpacked],
   define: { __DATA_FILES__: JSON.stringify(DATA_FILES) },
   server: { headers: isolation },

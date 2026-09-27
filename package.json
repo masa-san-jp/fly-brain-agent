@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test": "node --test tests/*.test.js",
+    "verify": "npm test && npm --prefix bridge-server test && npm run build && node --test tests/agent-e2e.mjs",
     "bridge": "npm --prefix bridge-server start",
     "bridge:mock": "npm --prefix bridge-server run mock"
   },
