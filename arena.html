@@ -57,6 +57,8 @@
   <section id="agentPanel" hidden>
     <h2>Agent bridge<span class="ja">エージェント連携</span></h2>
     <div id="agentBridgeStatus" class="note">bridge: disabled</div>
+    <div class="agent-voice-row"><span class="voice-label">Brain voice<span class="ja">脳の声</span> <b id="narrationState">off</b></span><button id="narrationToggle" type="button">turn on<span class="ja">オンにする</span></button></div>
+    <ol id="narrationNotes" class="note agent-notes" aria-label="Recent narrations"></ol>
     <div id="agentTerminals"></div>
     <div class="note">Synthetic buttons are debug-only and use the same detector → bridge path.<span class="ja-line">疑似ボタンはデバッグ用です。本物の接触と同じ「検出 → ブリッジ」の経路を通ります。</span></div>
   </section>

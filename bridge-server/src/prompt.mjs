@@ -2,12 +2,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const promptPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../prompts/speech.ja.md');
+const promptDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../prompts');
+const promptPath = path.join(promptDir, 'speech.ja.md');
+const narratePromptPath = path.join(promptDir, 'narrate.ja.md');
 const template = readFileSync(promptPath, 'utf8').trim();
+const narrateTemplate = readFileSync(narratePromptPath, 'utf8').trim();
 
 export function buildPrompt(validatedEvent) {
+  const selectedTemplate = validatedEvent?.event === 'narrate' ? narrateTemplate : template;
   return [
-    template,
+    selectedTemplate,
     '',
     '検証済みイベントJSON:',
     '',
@@ -17,4 +21,4 @@ export function buildPrompt(validatedEvent) {
   ].join('\n');
 }
 
-export { promptPath, template };
+export { narratePromptPath, narrateTemplate, promptPath, template };

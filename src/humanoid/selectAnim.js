@@ -64,35 +64,15 @@ function result(pose, prevState, state, action, extra = {}) {
 /**
  * Select the presentation animation for one simulation pose.
  *
- * This deliberately uses exact behaviour labels for feeding and escape jump.
- * In particular, "proboscis extended" is an idle presentation state and is
- * not treated as feeding.
+ * The avatar is a person walking, whatever the fly is doing: jumps, flight,
+ * feeding and grooming are not acted out (the fly's inner state is voiced by
+ * the narrator instead). Only death has its own clip; otherwise the on-screen
+ * ground speed picks idle, back-walk or a walk/jog/sprint blend.
  */
 export function selectAnim(pose = {}, prevState = null) {
-  const behavior = String(pose.behavior ?? '');
-  const cmd = pose.cmd || {};
   const groundSpeed = numberOr(pose.groundSpeed);
 
-  // Priority 1: death always wins, even if the final pose still carries a
-  // locomotor command or a stale behaviour label.
   if (pose.alive === false) return result(pose, prevState, 'death', 'death', { clip: 'death' });
-
-  // Priority 2: escape jump remains a valid humanoid action.
-  if (behavior === 'escape jump') return result(pose, prevState, 'jump', 'jump', { clip: 'jump' });
-
-  // Voluntary takeoff is gated off for humanoid mode.  A genuine airborne
-  // pose can still be represented by the distinct fall fallback; there is no
-  // separate flight animation in this phase.
-  if (pose.flying === true || behavior.startsWith('flying')) {
-    return result(pose, prevState, 'fall', 'fall', { clip: 'fall' });
-  }
-
-  // Priority 4: feeding is exact.  Proboscis extension while standing is not
-  // feeding because the simulation emits that label while idle.
-  if (behavior === 'feeding') return result(pose, prevState, 'feeding', 'crouch', { clip: 'crouch' });
-
-  // Priority 5: grooming is driven by the command flag, not by a label.
-  if (Boolean(cmd.grooming)) return result(pose, prevState, 'grooming', 'rubFace', { clip: 'rubFace' });
 
   // Priorities 6–7: signed measured ground speed controls backward walking and
   // a continuous walk/jog/sprint blend. A high command with no displacement is
@@ -108,7 +88,7 @@ export function selectAnim(pose = {}, prevState = null) {
       playbackRate: clamp(groundSpeed / CLIP_SPEED[dominant], 0.25, 1.5) });
   }
 
-  // Priority 8: both standing and proboscis extended are idle.
+  // Not moving on screen: stand.
   return result(pose, prevState, 'idle', 'idle', { clip: 'idle' });
 }
 

@@ -23,7 +23,7 @@ async function waitForHttp(url, child, timeoutMs = 30_000) {
   throw new Error(`timed out waiting for ${url}`);
 }
 
-test('agents arena debug touch closes the mock loop in Playwright', async () => {
+test('agents arena mock loop and continuous narration work in Playwright', async () => {
   const tempDir = await mkdtemp(path.join(os.tmpdir(), 'fly-agent-e2e-'));
   const logPath = path.join(tempDir, 'calls.jsonl');
   const bridge = await startBridgeServer({ port: 0, forceMock: true, logPath, workspaceDir: path.join(tempDir, 'workspace') });
@@ -36,12 +36,12 @@ test('agents arena debug touch closes the mock loop in Playwright', async () => 
     browser = await chromium.launch({ headless: true });
     await waitForHttp('http://127.0.0.1:4173/arena.html', vite, 30_000);
     const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-    await page.goto(`http://127.0.0.1:4173/arena.html?env=agents&avatar=vrm&bridge=ws://127.0.0.1:${bridge.port}&touch=debug&flies=1&vision=0&gpu=0&run=0`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+    await page.goto(`http://127.0.0.1:4173/arena.html?avatar=vrm&env=agents&bridge=ws://127.0.0.1:${bridge.port}&touch=debug&narrateEvery=3&flies=1&vision=0&gpu=0&run=1`, { waitUntil: 'domcontentloaded', timeout: 30_000 });
     await page.waitForFunction(() => window.__arena?.flies?.[0]?.last, null, { timeout: 120_000 });
     await page.locator('[data-debug-terminal="ollama"]').click();
     await page.waitForFunction(() => !document.querySelector('#agentBubble')?.hidden, null, { timeout: 15_000 });
     const bubble = await page.locator('#agentBubble').textContent();
-    assert.match(bubble, /こんにちは|ここにいる/);
+    assert.match(bubble, /こんにちは|ここにいる|甘くてうれしい！|おなかがすいたよ。/);
     await page.waitForFunction(() => window.__arena.env.food.find(food => food.agentId === 'ollama')?.sugar >= 1, null, { timeout: 5_000 });
     const envSugar = await page.evaluate(() => window.__arena.env.food.find(food => food.agentId === 'ollama').sugar);
     assert.ok(envSugar >= 1);
@@ -50,6 +50,14 @@ test('agents arena debug touch closes the mock loop in Playwright', async () => 
     assert.match(log, /"id":"debug-/);
     assert.match(log, /"terminal_id":"ollama"/);
     assert.match(log, /"payload":/);
+    await page.waitForFunction(() => document.querySelector('#narrationNotes')?.textContent?.trim(), null, { timeout: 40_000 });
+    // A transition reply may legitimately be the visible bubble because transition events
+    // have priority; the narration itself is also checked in the bridge log below.
+    assert.match(await page.locator('#agentBubble').textContent(), /左から何かいい匂いがする|甘くてうれしい！/);
+    const narrationLog = await readFile(logPath, 'utf8');
+    assert.match(narrationLog, /"id":"narr-/);
+    assert.match(narrationLog, /"event":"narrate"/);
+    assert.match(narrationLog, /"signals":\[/);
   } finally {
     await browser?.close().catch(() => {});
     await bridge.close();

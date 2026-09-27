@@ -105,3 +105,12 @@ button.primary .ja { opacity: .85; }
 .agent-terminal-row .terminal-name { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: .1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .agent-terminal-row .terminal-name small { margin-left: .45em; color: var(--dim); font-size: 11px; }
 .agent-terminal-row button { flex: none; padding: 3px 8px; }
+.agent-voice-row { display:flex; align-items:center; justify-content:space-between; gap:.5rem; margin:.35rem 0 .2rem; }
+.agent-voice-row .voice-label { color: var(--dim); white-space: nowrap; }
+.agent-voice-row .voice-label b { color: var(--fg); font-weight: 600; margin-left: .35em; }
+.agent-voice-row .voice-label b .ja { font-weight: 400; }
+.agent-voice-row button { flex:none; padding:3px 8px; }
+.agent-notes { margin:.25rem 0 .45rem 1.25rem; padding-left:1rem; max-height:6.5rem; overflow:auto; }
+.agent-notes:empty { display:none; }
+.agent-notes li { padding-left:.15rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.agent-notes time { font-variant-numeric:tabular-nums; opacity:.7; }

@@ -113,6 +113,7 @@ export const MOCK_REPLIES = Object.freeze({
   grooming: ['身だしなみを整えよう。', 'notify'],
   idle_long: ['少し退屈だな。', 'notify'],
   died: ['さようなら、またね。', 'negative'],
+  narrate: ['左から何かいい匂いがする。', 'notify'],
 });
 
 export async function runMock({ event, delayMs = 10 }) {

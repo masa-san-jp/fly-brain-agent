@@ -31,12 +31,18 @@ function roundTrip(port) {
       id: 'smoke-ollama',
       backend: 'ollama',
       payload: {
-        event: 'touched_agent',
+        event: 'narrate',
         agent_id: 0,
         terminal_id: 'ollama',
         t_ms: Date.now(),
         state: { behavior: 'standing', energy: 0.7, pos: [0, 0, 0], yaw: 0, flying: false },
         recent_behaviors: ['walking', 'standing'],
+        signals: [
+          { group: 'smell', hz_left: 18, hz_right: 7, baseline: 5, salience: 1.1, asymmetry: 0.55 },
+          { group: 'octopamine', hz_left: 9, hz_right: 9, baseline: 4, salience: 0.58, asymmetry: 0 },
+        ],
+        top: ['smell', 'octopamine'],
+        previous_line: '',
       },
     };
     ws.once('open', () => ws.send(JSON.stringify(request)));

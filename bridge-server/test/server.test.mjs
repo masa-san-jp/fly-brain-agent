@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import WebSocket from 'ws';
 import { startBridgeServer } from '../src/server.mjs';
+import { validateEventPayload } from '../src/validation.mjs';
 
 function validPayload(extra = {}) {
   return {
@@ -53,6 +54,47 @@ function sendAndReceive(port, request, options = {}) {
 function request(id, backend = 'mock', payload = validPayload()) {
   return { type: 'event', id, backend, payload };
 }
+
+function narratePayload(extra = {}) {
+  return validPayload({
+    event: 'narrate',
+    state: { behavior: 'walking', energy: 0.6, pos: [0, 0, 0.13], yaw: 0, flying: false },
+    signals: [{ group: 'smell', hz_left: 1200, hz_right: -4, baseline: 10, salience: 80, asymmetry: -3, ignored: 'drop' }],
+    top: ['smell'],
+    previous_line: '左から匂いがする',
+    ...extra,
+  });
+}
+
+test('narrate validation clamps signal ranges and strips unknown fields', () => {
+  const clean = validateEventPayload(narratePayload({ unknown: 'drop' }));
+  assert.deepEqual(clean.signals, [{ group: 'smell', hz_left: 1000, hz_right: 0, baseline: 10, salience: 50, asymmetry: -1 }]);
+  assert.equal(clean.previous_line, '左から匂いがする');
+  assert.equal(Object.hasOwn(clean, 'unknown'), false);
+});
+
+test('narrate validation rejects unknown groups and oversized signal lists', () => {
+  assert.throws(() => validateEventPayload(narratePayload({ signals: [{ group: 'brain', hz_left: 1, hz_right: 1, baseline: 1, salience: 0, asymmetry: 0 }] })), /unknown group/);
+  assert.throws(() => validateEventPayload(narratePayload({ signals: Array.from({ length: 13 }, (_, index) => ({ group: `g${index}`, hz_left: 1, hz_right: 1, baseline: 1, salience: 0, asymmetry: 0 })) })), /at most 12/);
+  assert.throws(() => validateEventPayload(narratePayload({ top: ['smell', 'brain'] })), /known groups/);
+  assert.throws(() => validateEventPayload(narratePayload({ previous_line: 'あ'.repeat(41) })), /40/);
+});
+
+test('narrate mock round trip uses the narration prompt and keeps a narr- request shape', async (t) => {
+  let seenEvent;
+  let seenPrompt;
+  const { server, tempDir } = await makeServer({
+    backendOverrides: { mock: ({ event, prompt }) => { seenEvent = event; seenPrompt = prompt; return JSON.stringify({ text: '左から何かいい匂いがする。', valence: 'notify' }); } },
+  });
+  t.after(async () => { await server.close(); await rm(tempDir, { recursive: true, force: true }); });
+  const result = await sendAndReceive(server.port, request('narr-1', 'mock', narratePayload()));
+  assert.equal(result.type, 'reply');
+  assert.equal(result.text, '左から何かいい匂いがする。');
+  assert.equal(seenEvent.event, 'narrate');
+  assert.match(seenPrompt, /脳信号だけを根拠/);
+  assert.match(seenPrompt, /前回の発話/);
+  assert.doesNotMatch(seenPrompt, /ignored/);
+});
 
 test('mock WebSocket round trip and whitelist field stripping', async (t) => {
   let seenEvent;

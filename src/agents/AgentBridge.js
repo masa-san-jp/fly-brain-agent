@@ -42,6 +42,10 @@ export class AgentBridge {
     return this.dispatch(event, 'debug-');
   }
 
+  narrate(payload) {
+    return this.dispatch(payload, 'narr-');
+  }
+
   dispatch(event, idPrefix = 'browser-') {
     const terminal = this.terminalsById.get(String(event.terminal_id));
     const backend = this.rules.backendFor(event, terminal);

@@ -15,6 +15,7 @@ import { parseFlyVis } from './flyvis.js';
 import { buildGroups } from './sim/groups.js';
 import { SCAFFOLD_IDS, createScaffoldSet } from './sim/scaffold/index.js';
 import { AgentBridge, loadAgentBridgeRules } from './agents/AgentBridge.js';
+import { NeuralNarrator } from './agents/NeuralNarrator.js';
 import { ja, PRESET_JA, GROUP_JA, STATUS_JA, BRIDGE_JA, behaviorJa } from './i18n-ja.js';
 const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pages
 
@@ -45,6 +46,9 @@ const HUMANOID_MODE = new URLSearchParams(location.search).get('avatar') === 'vr
 const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') ||
   (presetKey === 'agents' && HUMANOID_MODE ? 'ws://127.0.0.1:8787' : null);
 const DEBUG_TOUCH = new URLSearchParams(location.search).get('touch') === 'debug';
+const NARRATE_QUERY = new URLSearchParams(location.search).get('narrate');
+const NARRATE_INTERVAL = Math.max(250, Number(new URLSearchParams(location.search).get('narrateEvery')) * 1000 || 7_000);
+const NARRATION_AVAILABLE = HUMANOID_MODE && Boolean(BRIDGE_URL) && NARRATE_QUERY !== '0';
 const env = PRESET.env();
 const flies = [];          // {id, worker, group, bodies[], last, color, ready}
 let flyvisMap, shared, meta, bodymap, flyXML, gait, visual, batches, humanoidRenderer, HumanoidRendererClass, agentBridge, outputPass, running = false, selected = 0, tool = 'none', speed = 2, brainMem, wasmModule, brainParams, neuromodCalib;
@@ -52,6 +56,9 @@ const terminalStates = new Map();
 const terminalMeshes = new Map();
 const terminalEffects = new Map();
 let activeBubble = null;
+let narrationEnabled = NARRATION_AVAILABLE;
+const narrators = new Map();
+const narrationHistory = [];
 
 function toShared(ta) { const sab = new SharedArrayBuffer(ta.byteLength); const out = new ta.constructor(sab); out.set(ta); return out; }
 
@@ -271,6 +278,7 @@ async function addFly(pos, yaw, sex = 'm') {
   const id = nextId++; const color = FLY_COLORS[id % FLY_COLORS.length];
   const worker = new Worker(new URL('./sim/fly.worker.js', import.meta.url), { type: 'module' });
   const f = { id, worker, color, sex, ready: false, last: null, prev: null, stats: {}, ...buildFlyMesh(color, sex) };
+  if (NARRATION_AVAILABLE) narrators.set(id, new NeuralNarrator({ agentId: id, intervalMs: NARRATE_INTERVAL }));
   if (HUMANOID_MODE) { f.group.visible = false; f.ring.visible = false; }
   scene.add(f.group); flies.push(f); batches.add(f);
   if (HUMANOID_MODE) humanoidRenderer.addFly(f);
@@ -328,10 +336,12 @@ function setTerminalState(id, state) {
   kiosk.userData.bridgeState = state;
 }
 
-function showSpeechBubble(fly, text) {
+function showSpeechBubble(fly, text, options = {}) {
   const bubble = $('#agentBubble'); if (!bubble || !text) return;
+  const priority = options.priority ?? 1;
+  if (activeBubble && performance.now() < activeBubble.until && activeBubble.priority > priority) return;
   bubble.textContent = text; bubble.hidden = false;
-  activeBubble = { fly, until: performance.now() + 10_000 };
+  activeBubble = { fly, until: performance.now() + 10_000, priority };
 }
 
 function applyValence(terminalId, valence) {
@@ -363,21 +373,64 @@ function applyValence(terminalId, valence) {
 
 function handleBridgeReply({ reply, request }) {
   const event = request?.payload;
+  const fly = flies.find(item => item.id === event?.agent_id);
+  if (event?.event === 'narrate') {
+    narrators.get(event.agent_id)?.complete(reply.text);
+    addNarrationNote(fly, reply.text);
+    if (fly) showSpeechBubble(fly, reply.text, { priority: 0 });
+    return;
+  }
   const terminalId = event?.terminal_id;
   if (terminalId !== undefined) setTerminalState(terminalId, 'replied');
-  const fly = flies.find(item => item.id === event?.agent_id);
-  if (fly) showSpeechBubble(fly, reply.text);
+  if (fly) showSpeechBubble(fly, reply.text, { priority: 1 });
   if (terminalId !== undefined) applyValence(terminalId, reply.valence);
 }
 
 function handleBridgeError({ error, request }) {
   const event = request?.payload;
+  if (event?.event === 'narrate') {
+    narrators.get(event.agent_id)?.fail();
+    return;
+  }
   if (event?.terminal_id !== undefined) setTerminalState(event.terminal_id, 'error');
   const message = error?.message || error?.code || 'bridge error';
   if (request?.payload) {
     const fly = flies.find(item => item.id === request.payload.agent_id);
-    if (fly) showSpeechBubble(fly, message);
+    if (fly) showSpeechBubble(fly, message, { priority: 1 });
   }
+}
+
+function addNarrationNote(fly, text) {
+  if (!text) return;
+  narrationHistory.unshift({ at: Date.now(), flyId: fly?.id, text });
+  narrationHistory.splice(5);
+  renderNarrationHistory();
+}
+
+function renderNarrationHistory() {
+  const list = $('#narrationNotes'); if (!list) return;
+  list.replaceChildren();
+  for (const note of narrationHistory) {
+    const item = document.createElement('li');
+    const time = document.createElement('time'); time.textContent = new Date(note.at).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    item.append(time, document.createTextNode(` ${note.text}`));
+    list.append(item);
+  }
+}
+
+function updateNarrationUI() {
+  const state = $('#narrationState'); if (state) state.innerHTML = narrationEnabled ? `on${ja('オン')}` : `off${ja('オフ')}`;
+  const button = $('#narrationToggle');
+  if (!button) return;
+  button.disabled = !NARRATION_AVAILABLE;
+  button.innerHTML = narrationEnabled ? `turn off${ja('オフにする')}` : `turn on${ja('オンにする')}`;
+}
+
+function toggleNarration() {
+  if (!NARRATION_AVAILABLE) return;
+  narrationEnabled = !narrationEnabled;
+  for (const narrator of narrators.values()) narrator.setEnabled(narrationEnabled);
+  updateNarrationUI();
 }
 
 function sendDebugTouch(terminalId) {
@@ -399,7 +452,7 @@ function buildUI() {
   $('#mode').onchange = e => { for (const f of flies) f.worker.postMessage({ type: 'mode', mode: e.target.value }); };
   document.querySelectorAll('.tools button').forEach(b => b.onclick = () => { tool = b.dataset.tool; document.querySelectorAll('.tools button').forEach(x => x.classList.toggle('on', x === b)); });
   setupFolds();
-  setInterval(() => { const f = flies.find(x => x.id === selected); if (!document.hidden && f?.ready && !$('#brainpanel').classList.contains('folded')) f.worker.postMessage({ type: 'activity' }); }, 120);
+  setInterval(() => { const f = flies.find(x => x.id === selected); const folded = $('#brainpanel').classList.contains('folded'); if (!document.hidden && f?.ready && (narrationEnabled || !folded)) f.worker.postMessage({ type: 'activity' }); }, 120);
   $('#wind').oninput = e => { const v = +e.target.value; $('#windv').textContent = v; env.wind = [v, 0]; syncEnv(); };
   $('#light').oninput = e => { env.light.sky = +e.target.value; scene.background = new THREE.Color().setHSL(0.6, 0.3, 0.02 + 0.05 * env.light.sky); syncEnv(); };
   $('#threat').onclick = () => launchThreat();
@@ -416,6 +469,9 @@ function buildAgentUI() {
   section.hidden = !hasAgents;
   updateBridgeStatus(BRIDGE_URL ? 'starting' : 'disabled');
   const list = $('#agentTerminals'); if (!list) return;
+  $('#narrationToggle')?.addEventListener('click', toggleNarration);
+  updateNarrationUI();
+  renderNarrationHistory();
   list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span class="terminal-name" title="${agent.id} · ${agent.backend}"><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id}<small>${agent.backend}</small></span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}" title="Synthetic touch for debugging / デバッグ用の疑似接触">call now${ja('今すぐ呼ぶ')}</button>` : ''}</div>`).join('');
   list.querySelectorAll('[data-debug-terminal]').forEach(button => {
     button.onclick = () => sendDebugTouch(button.dataset.debugTerminal);
@@ -524,6 +580,22 @@ function onActivity(f, m) {
     cx.fillStyle = '#5b6472'; cx.font = '11px system-ui, sans-serif'; cx.textAlign = 'center';
     cx.fillText('vision off', 84, 62);
   });
+  if (narrationEnabled && agentBridge && m.groups && typeof m.groups.length === 'number' && f.last) {
+    const narrator = narrators.get(f.id) || new NeuralNarrator({ agentId: f.id, intervalMs: NARRATE_INTERVAL });
+    narrators.set(f.id, narrator);
+    const event = narrator.maybeNarrate({
+      agent_id: f.id,
+      t_ms: m.t,
+      behavior: f.last.behavior,
+      energy: f.last.energy,
+      pos: f.last.pos,
+      yaw: f.last.yaw,
+      flying: f.last.flying,
+      alive: f.last.alive,
+      recent_behaviors: [],
+    }, m.groups, Date.now());
+    if (event) agentBridge.narrate(event);
+  }
 }
 
 // ---------------- looming threat: a dark sphere swoops toward the selected fly's head from the front-side ----------------

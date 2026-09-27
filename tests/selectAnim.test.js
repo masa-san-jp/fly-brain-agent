@@ -16,26 +16,16 @@ test('priority 1: dead wins over every other signal', () => {
   assert.equal(selected.action, 'death');
 });
 
-test('priority 2: escape jump wins over feeding and grooming', () => {
-  const selected = selectAnim(pose({ behavior: 'escape jump', cmd: { v: 1, grooming: true } }));
-  assert.equal(selected.state, 'jump');
-});
-
-test('priority 3: airborne poses use fall and do not select a flight action', () => {
-  const selected = selectAnim(pose({ behavior: 'flying…', flying: true }));
-  assert.equal(selected.state, 'fall');
-  assert.notEqual(selected.action, 'flight');
-});
-
-test('priority 4: only the exact feeding label feeds; proboscis extension is idle', () => {
-  assert.equal(selectAnim(pose({ behavior: 'feeding', feeding: 0 })).state, 'feeding');
-  assert.equal(selectAnim(pose({ behavior: 'proboscis extended', feeding: 1 })).state, 'idle');
-});
-
-test('priority 5: grooming command selects the rub-face action', () => {
-  const selected = selectAnim(pose({ cmd: { v: 0.8, turn: 0, grooming: true } }));
-  assert.equal(selected.state, 'grooming');
-  assert.equal(selected.action, 'rubFace');
+test('jumps, flight, feeding and grooming are never acted out: moving walks, still stands', () => {
+  const poses = [
+    { behavior: 'escape jump' }, { behavior: 'taking off' }, { behavior: 'flying (cruise)', flying: true },
+    { behavior: 'feeding', feeding: 1 }, { behavior: 'grooming', cmd: { v: 0, turn: 0, grooming: true } },
+    { behavior: 'proboscis extended' },
+  ];
+  for (const p of poses) {
+    assert.equal(selectAnim(pose({ ...p, groundSpeed: 0.26 })).action, 'walk', p.behavior);
+    assert.equal(selectAnim(pose({ ...p, groundSpeed: 0 })).state, 'idle', p.behavior);
+  }
 });
 
 test('priority 6: negative velocity selects back-walk', () => {

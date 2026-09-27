@@ -214,7 +214,8 @@ export class HumanoidRenderer {
     const instance = this.instances.get(fly.id);
     if (!instance) return;
     const p = posePosition(pose, previous, blend);
-    instance.root.position.set(p[0], p[1], p[2]);
+    // Feet stay on the floor: the fly's height (jumps, flight) is not shown.
+    instance.root.position.set(p[0], p[1], BODY_Z);
     const yaw = previous?.yaw !== undefined && blend < 1 ? lerpAngle(previous.yaw, pose.yaw || 0, blend) : (pose.yaw || 0);
     instance.heading.rotation.z = yaw + Math.PI / 2;
     const wallDt = instance.lastTime == null ? 0 : Math.max(0, (now - instance.lastTime) / 1000);
