@@ -7,6 +7,16 @@ import WebSocket from 'ws';
 import { startBridgeServer } from '../src/server.mjs';
 import { validateEventPayload } from '../src/validation.mjs';
 
+// The server appends to calls.jsonl after sending the reply, so wait for the line to land.
+async function readLogWhenWritten(file, timeoutMs = 2000) {
+  const until = Date.now() + timeoutMs;
+  for (;;) {
+    try { const text = await readFile(file, 'utf8'); if (text.trim()) return text; } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    if (Date.now() > until) throw new Error(`no log written to ${file}`);
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
 function validPayload(extra = {}) {
   return {
     event: 'startled',
@@ -267,5 +277,5 @@ test('does not pass or return environment secrets', async (t) => {
   const serialized = JSON.stringify(result);
   assert.equal(seenChildEnv.SECRET, undefined);
   assert.doesNotMatch(serialized, /never-send-this-secret/);
-  assert.doesNotMatch(await readFile(path.join(tempDir, 'calls.jsonl'), 'utf8'), /never-send-this-secret/);
+  assert.doesNotMatch(await readLogWhenWritten(path.join(tempDir, 'calls.jsonl')), /never-send-this-secret/);
 });
