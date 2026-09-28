@@ -32,6 +32,11 @@ function agentEnv() {
 // Environment presets ("different environments to play and survive in")
 export const PRESETS = {
   foraging: { label: 'Foraging arena', env: () => structuredClone(DEFAULT_ENV), flies: 1 },
+  bci: { label: 'BCI: scarce food, no hazards', flies: 1, start: [0, 0, 0], env: () => ({
+    ...structuredClone(DEFAULT_ENV),
+    food: [{ x: 1.75, y: 1.15, r: 0.12, sugar: 1, bitter: 0, water: 0.2, amount: 2 }],
+    odors: [], bitterPatches: [], obstacles: [], hazards: [], agents: [],
+  }) },
   openfield: { label: 'Open field, scattered food', flies: 3, env: () => ({ ...structuredClone(DEFAULT_ENV), obstacles: [], hazards: [], bitterPatches: [{ x: 0, y: -1.4, r: 0.3, bitter: 1 }],
     food: [[1.4, 0.9], [-1.5, 0.8], [0.2, 1.8], [-0.6, -1.6], [1.6, -1.1]].map(([x, y]) => ({ x, y, r: 0.2, sugar: 1, bitter: 0, water: 0.2, amount: 3 })),
     odors: [[1.4, 0.9], [-1.5, 0.8], [0.2, 1.8], [-0.6, -1.6], [1.6, -1.1]].map(([x, y]) => ({ x, y, odor: 'vinegar', strength: 0.7, sigma: 0.6 })) }) },

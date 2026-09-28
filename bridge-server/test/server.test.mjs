@@ -82,6 +82,16 @@ function requestPayload(extra = {}) {
   };
 }
 
+function bciPayload(extra = {}) {
+  return {
+    event: 'bci', agent_id: 0, t_ms: 5000,
+    state_table: [
+      { fact: '空腹', value: '少し' }, { fact: '匂い', value: '変化なし' }, { fact: '味', value: 'なし' },
+      { fact: '視界', value: '変化なし' }, { fact: '接近物', value: 'なし' }, { fact: '気分/覚醒', value: '落ち着いている' }, { fact: '体の動き', value: '歩いている' },
+    ], changed: ['空腹'], last_actions: [], ...extra,
+  };
+}
+
 test('narrate validation clamps signal ranges and strips unknown fields', () => {
   const clean = validateEventPayload(narratePayload({ unknown: 'drop' }));
   assert.deepEqual(clean.signals, [{ group: 'smell', hz_left: 1000, hz_right: 0, baseline: 10, salience: 50, asymmetry: -1 }]);
@@ -153,6 +163,18 @@ test('request mock returns a validated arena tool action', async (t) => {
   assert.equal(result.type, 'reply');
   assert.deepEqual(result.action, { tool: 'place_sugar', near: 'fly', distance: 0.3, amount: 1 });
   assert.equal(result.valence, undefined);
+});
+
+test('bci mock round trip exposes only the state table and uses the BCI tool whitelist', async (t) => {
+  let seenEvent; let seenPrompt;
+  const { server, tempDir } = await makeServer({ backendOverrides: { mock: ({ event, prompt }) => { seenEvent = event; seenPrompt = prompt; return JSON.stringify({ action: { tool: 'place_sugar', near: 'fly', distance: 0.45, amount: 1 }, text: '置くね。' }); } } });
+  t.after(async () => { await server.close(); await rm(tempDir, { recursive: true, force: true }); });
+  const result = await sendAndReceive(server.port, request('bci-1', 'mock', bciPayload()));
+  assert.deepEqual(result.action, { tool: 'place_sugar', near: 'fly', distance: 0.45, amount: 1 });
+  assert.equal(seenEvent.event, 'bci');
+  assert.deepEqual(Object.keys(seenEvent).sort(), ['agent_id', 'changed', 'event', 'last_actions', 'state_table', 't_ms'].sort());
+  assert.match(seenPrompt, /caretaker device/);
+  assert.doesNotMatch(seenPrompt, /"pos"|"energy"|"arena"/);
 });
 
 test('request backend reduces invalid LLM tool output to nothing', async (t) => {

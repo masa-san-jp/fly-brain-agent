@@ -11,7 +11,9 @@
     "verify": "npm test && npm --prefix bridge-server test && npm run build && node --test tests/agent-e2e.mjs",
     "bridge": "npm --prefix bridge-server start",
     "bridge:mock": "npm --prefix bridge-server run mock",
-    "experiment:smoke": "node scripts/check_experiment_baseline.mjs"
+    "experiment:smoke": "node scripts/check_experiment_baseline.mjs",
+    "experiment:bci": "node scripts/experiment_bci.mjs",
+    "experiment:bci:smoke": "node scripts/check_experiment_bci.mjs"
   },
   "keywords": [],
   "author": "",

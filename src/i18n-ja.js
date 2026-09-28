@@ -5,6 +5,7 @@ export const ja = (text) => `<span class="ja">${text}</span>`;
 
 export const PRESET_JA = {
   foraging: '採餌アリーナ',
+  bci: 'BCI：餌が少なく、危険なし',
   openfield: '開けた野外・餌が点在',
   predator: '捕食者ゾーン（周期的な接近脅威）',
   maze: '迷路（奥に餌）',

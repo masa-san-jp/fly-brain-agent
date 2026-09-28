@@ -1,5 +1,5 @@
 import vocab from '../../src/agents/brainStateVocab.json' with { type: 'json' };
-import { ATTRACTIVE_ODORS } from '../../src/agents/arenaTools.js';
+import { ATTRACTIVE_ODORS, validateBciAction } from '../../src/agents/arenaTools.js';
 
 const EVENTS = new Set([
   'touched_agent',
@@ -11,6 +11,7 @@ const EVENTS = new Set([
   'died',
   'narrate',
   'request',
+  'bci',
 ]);
 
 const GROUP_KEYS = Object.freeze([
@@ -193,6 +194,28 @@ function validateRequest(payload, clean) {
   clean.arena = validateArenaSnapshot(payload.arena);
 }
 
+function validateBci(payload, clean) {
+  const { stateTable, facts } = validateStateTable(payload.state_table);
+  if (stateTable.length !== BRAIN_STATE_FACTS.length || facts.size !== BRAIN_STATE_FACTS.length) {
+    throw new PayloadValidationError('bci state_table must contain the complete vocabulary table');
+  }
+  if (!Array.isArray(payload.changed) || payload.changed.length > BRAIN_STATE_FACTS.length ||
+      payload.changed.some(fact => !BRAIN_STATE_FACT_SET.has(fact) || !facts.has(fact)) ||
+      new Set(payload.changed).size !== payload.changed.length) {
+    throw new PayloadValidationError('bci changed must contain known state_table facts');
+  }
+  if (!Array.isArray(payload.last_actions) || payload.last_actions.length > 3) {
+    throw new PayloadValidationError('bci last_actions must contain at most three actions');
+  }
+  clean.state_table = stateTable;
+  clean.changed = [...payload.changed];
+  clean.last_actions = payload.last_actions.map(action => {
+    const valid = validateBciAction(action);
+    if (action?.tool !== 'nothing' && valid.tool === 'nothing') throw new PayloadValidationError('bci last_actions contains an invalid action');
+    return valid;
+  });
+}
+
 export function validateEventPayload(payload) {
   if (!isRecord(payload)) throw new PayloadValidationError('payload must be an object');
   if (!EVENTS.has(payload.event)) throw new PayloadValidationError('unknown event');
@@ -200,20 +223,24 @@ export function validateEventPayload(payload) {
     throw new PayloadValidationError('agent_id is required');
   }
   if (!isFiniteNumber(payload.t_ms)) throw new PayloadValidationError('t_ms must be a number');
+  const clean = {
+    event: payload.event,
+    agent_id: validateIdentifier(payload.agent_id, 'agent_id'),
+    t_ms: payload.t_ms,
+  };
+
+  if (payload.event === 'bci') {
+    validateBci(payload, clean);
+    return clean;
+  }
   if (!Object.prototype.hasOwnProperty.call(payload, 'state')) {
     throw new PayloadValidationError('state is required');
   }
   if (!Object.prototype.hasOwnProperty.call(payload, 'recent_behaviors')) {
     throw new PayloadValidationError('recent_behaviors is required');
   }
-
-  const clean = {
-    event: payload.event,
-    agent_id: validateIdentifier(payload.agent_id, 'agent_id'),
-    t_ms: payload.t_ms,
-    state: validateState(payload.state),
-    recent_behaviors: validateRecentBehaviors(payload.recent_behaviors),
-  };
+  clean.state = validateState(payload.state);
+  clean.recent_behaviors = validateRecentBehaviors(payload.recent_behaviors);
 
   if (payload.event !== 'narrate' && Object.prototype.hasOwnProperty.call(payload, 'terminal_id')) {
     clean.terminal_id = validateIdentifier(payload.terminal_id, 'terminal_id');

@@ -15,8 +15,9 @@ import { parseFlyVis } from './flyvis.js';
 import { buildGroups } from './sim/groups.js';
 import { SCAFFOLD_IDS, createScaffoldSet } from './sim/scaffold/index.js';
 import { AgentBridge, loadAgentBridgeRules } from './agents/AgentBridge.js';
+import { BCIInterface } from './agents/BCIInterface.js';
 import { RuleTable } from './agents/RuleTable.js';
-import { applyArenaAction, arenaItems } from './agents/arenaTools.js';
+import { applyArenaAction, applyBciAction, arenaItems } from './agents/arenaTools.js';
 import { NeuralNarrator } from './agents/NeuralNarrator.js';
 import { ja, PRESET_JA, GROUP_JA, STATUS_JA, BRIDGE_JA, behaviorJa } from './i18n-ja.js';
 const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pages
@@ -24,7 +25,9 @@ const BASE = import.meta.env.BASE_URL; // "/" in dev, "/fly-brain/" on GitHub Pa
 const $ = s => document.querySelector(s);
 const status = s => { $('#status').innerHTML = STATUS_JA[s] ? `${s}${ja(STATUS_JA[s])}` : s; };
 const FLY_COLORS = ['#ffb347', '#5ac8fa', '#a3e635', '#f472b6', '#c084fc', '#facc15', '#fb7185', '#2dd4bf'];
-const presetKey = new URLSearchParams(location.search).get('env') || 'foraging';
+const QUERY = new URLSearchParams(location.search);
+const BCI_MODE = QUERY.get('bci') === '1';
+const presetKey = BCI_MODE ? 'bci' : (QUERY.get('env') || 'foraging');
 const PRESET = PRESETS[presetKey] || PRESETS.foraging;
 // Worker-pool cap. Each fly is one worker running its own brain + MuJoCo world, so the
 // practical ceiling is CPU-bound and machine-dependent: on a 16-core laptop aggregate
@@ -45,8 +48,8 @@ const NO_VISION = ['0', 'false', 'off', 'no'].includes((new URLSearchParams(loca
 // Humanoid presentation is strictly opt-in. The legacy arena path does not
 // import or instantiate any VRM code unless ?avatar=vrm is present.
 const HUMANOID_MODE = new URLSearchParams(location.search).get('avatar') === 'vrm';
-const BRIDGE_URL = new URLSearchParams(location.search).get('bridge') ||
-  (presetKey === 'agents' && HUMANOID_MODE ? 'ws://127.0.0.1:8787' : null);
+const BRIDGE_URL = QUERY.get('bridge') ||
+  (BCI_MODE || (presetKey === 'agents' && HUMANOID_MODE) ? 'ws://127.0.0.1:8787' : null);
 const REQUEST_BACKEND = new URLSearchParams(location.search).get('agentBackend');
 const DEBUG_TOUCH = new URLSearchParams(location.search).get('touch') === 'debug';
 const NARRATE_QUERY = new URLSearchParams(location.search).get('narrate');
@@ -54,7 +57,7 @@ const NARRATE_INTERVAL = Math.max(250, Number(new URLSearchParams(location.searc
 const NARRATION_AVAILABLE = HUMANOID_MODE && Boolean(BRIDGE_URL) && NARRATE_QUERY !== '0';
 const env = PRESET.env();
 const flies = [];          // {id, worker, group, bodies[], last, color, ready}
-let flyvisMap, shared, meta, bodymap, flyXML, gait, visual, batches, humanoidRenderer, HumanoidRendererClass, agentBridge, outputPass, running = false, selected = 0, tool = 'none', speed = 2, brainMem, wasmModule, brainParams, neuromodCalib;
+let flyvisMap, shared, meta, bodymap, flyXML, gait, visual, batches, humanoidRenderer, HumanoidRendererClass, agentBridge, bciInterface, outputPass, running = false, selected = 0, tool = 'none', speed = 2, brainMem, wasmModule, brainParams, neuromodCalib;
 const terminalStates = new Map();
 const terminalMeshes = new Map();
 const terminalEffects = new Map();
@@ -103,7 +106,7 @@ async function main() {
   window.__data = data;
   buildBrainPanel(data);
   buildScene(data);
-  if (BRIDGE_URL) {
+  if (BRIDGE_URL && (!BCI_MODE || NARRATION_AVAILABLE)) {
     try {
       const loadedRules = await loadAgentBridgeRules();
       const rules = ['ollama', 'claude-code', 'codex', 'random'].includes(REQUEST_BACKEND)
@@ -119,6 +122,20 @@ async function main() {
       updateBridgeStatus('rules unavailable');
     }
   }
+  if (BCI_MODE && BRIDGE_URL) {
+    bciInterface = new BCIInterface({
+      url: BRIDGE_URL, backend: REQUEST_BACKEND || 'ollama',
+      onDecision: ({ payload }) => {
+        const fly = flies.find(item => item.id === payload.agent_id);
+        if (fly?.ready) fly.worker.postMessage({ type: 'pause' });
+      },
+      onReply: ({ reply, context }) => handleBciReply(reply, context),
+      onError: ({ error, context }) => handleBciError(error, context),
+      onState: (table, tMs) => renderBciState(table, tMs),
+      onStatus: updateBridgeStatus,
+    });
+    bciInterface.start();
+  }
   buildUI();
   if (HUMANOID_MODE) {
     status('loading humanoid avatar and animations');
@@ -131,10 +148,11 @@ async function main() {
   else { await addFly([st0[0], st0[1]], st0[2]);
     for (let k = 1; k < Math.min(PRESET.flies || 1, FLY_CAP); k++) { const ang = k * 2.4; await addFly([1.2 * Math.cos(ang), 1.2 * Math.sin(ang)], ang + Math.PI); } }
   if (PRESET.autoThreat) setInterval(() => { if (!running || !flies.length) return; const live = flies.filter(f => f.last?.alive !== false); if (!live.length) return; selected = live[Math.floor(Math.random() * live.length)].id; launchThreat(); }, PRESET.autoThreat * 1000);
-  window.__arena = { camera, controls, flies, env, THREE, renderer, scene, gtao, composer, metrics, resolution, batches, visual, humanoidRenderer, addFly, rebuildEnv, FLY_CAP, MAX_FLIES, HUMANOID_MODE };
+  window.__arena = { camera, controls, flies, env, THREE, renderer, scene, gtao, composer, metrics, resolution, batches, visual, humanoidRenderer, addFly, rebuildEnv, FLY_CAP, MAX_FLIES, HUMANOID_MODE, BCI_MODE };
   animate();
   // The humanoid page is a showcase: start the simulation without a click (?run=0 keeps it paused).
   if (HUMANOID_MODE && !running && new URLSearchParams(location.search).get('run') !== '0') $('#play').click();
+  if (BCI_MODE && !running && new URLSearchParams(location.search).get('run') !== '0') $('#play').click();
 }
 
 // ---------------- scene ----------------
@@ -417,6 +435,43 @@ function handleBridgeError({ error, request }) {
   }
 }
 
+function resumeBciFly(agentId) {
+  const fly = flies.find(item => item.id === agentId);
+  if (fly?.ready && running) fly.worker.postMessage({ type: 'run' });
+}
+
+function handleBciReply(reply, context) {
+  const payload = context?.payload;
+  const fly = flies.find(item => item.id === payload?.agent_id);
+  const result = applyBciAction(env, reply?.action, { pose: context?.pose, nowMs: payload?.t_ms });
+  Object.assign(env, result.env); rebuildEnv(); syncEnv();
+  addBciAction(reply?.action, reply?.text, result.line, payload?.t_ms);
+  if (fly) showSpeechBubble(fly, `${reply?.text || ''}\n${result.line}`, { priority: 1 });
+  resumeBciFly(payload?.agent_id);
+}
+
+function handleBciError(error, context) {
+  const payload = context?.payload;
+  addBciAction({ tool: 'nothing' }, error?.message || error?.code || 'bridge error', 'error / エラー', payload?.t_ms);
+  resumeBciFly(payload?.agent_id);
+}
+
+function renderBciState(stateTable, tMs) {
+  const table = $('#bciState'); if (!table) return;
+  table.replaceChildren();
+  for (const item of stateTable || []) {
+    const row = document.createElement('div'); const fact = document.createElement('span'); const value = document.createElement('b');
+    fact.textContent = item.fact; value.textContent = item.value; row.append(fact, value); table.append(row);
+  }
+  const time = $('#bciTime'); if (time) time.textContent = `${(Number(tMs) / 1000).toFixed(1)} s / シミュ秒`;
+}
+
+function addBciAction(action, text, line, tMs) {
+  const list = $('#bciActions'); if (!list) return;
+  const item = document.createElement('li'); item.textContent = `${(Number(tMs) / 1000).toFixed(1)}s ${action?.tool || 'nothing'} · ${text || line || ''}`;
+  list.prepend(item); while (list.children.length > 5) list.lastElementChild.remove();
+}
+
 function addNarrationNote(fly, text, changed = []) {
   if (!text) return;
   narrationHistory.unshift({ at: Date.now(), flyId: fly?.id, text, changed: Array.isArray(changed) ? changed : [] });
@@ -497,13 +552,18 @@ function buildUI() {
 function buildAgentUI() {
   const section = $('#agentPanel'); if (!section) return;
   const hasAgents = (env.agents || []).length > 0;
-  section.hidden = !hasAgents;
+  section.hidden = !(hasAgents || BCI_MODE);
   updateBridgeStatus(BRIDGE_URL ? 'starting' : 'disabled');
   const list = $('#agentTerminals'); if (!list) return;
   $('#narrationToggle')?.addEventListener('click', toggleNarration);
   updateNarrationUI();
   renderNarrationHistory();
   list.innerHTML = (env.agents || []).map(agent => `<div class="agent-terminal-row"><span class="terminal-name" title="${agent.id} · ${agent.backend}"><i class="terminal-dot" data-terminal-dot="${agent.id}"></i>${agent.id}<small>${agent.kind || ''} · ${agent.backend}</small></span>${DEBUG_TOUCH ? `<button data-debug-terminal="${agent.id}" title="Synthetic touch for debugging / デバッグ用の疑似接触">call now${ja('今すぐ呼ぶ')}</button>` : ''}</div>`).join('');
+  if (BCI_MODE) {
+    const bci = document.createElement('div'); bci.className = 'bci-live';
+    bci.innerHTML = `<div class="note">Decoded brain state<span class="ja">デコードされた脳状態</span> <span id="bciTime">–</span></div><div id="bciState" class="bci-state"></div><div class="note">Device actions<span class="ja">装置の操作</span></div><ol id="bciActions" class="note agent-notes" aria-label="BCI actions"></ol>`;
+    section.insertBefore(bci, list);
+  }
   list.querySelectorAll('[data-debug-terminal]').forEach(button => {
     button.onclick = () => sendDebugTouch(button.dataset.debugTerminal);
   });
@@ -611,7 +671,7 @@ function onActivity(f, m) {
     cx.fillStyle = '#5b6472'; cx.font = '11px system-ui, sans-serif'; cx.textAlign = 'center';
     cx.fillText('vision off', 84, 62);
   });
-  if (agentBridge && m.groups && typeof m.groups.length === 'number' && f.last) {
+  if ((agentBridge || bciInterface) && m.groups && typeof m.groups.length === 'number' && f.last) {
     const narrator = narrators.get(f.id) || new NeuralNarrator({ agentId: f.id, intervalMs: NARRATE_INTERVAL });
     narrators.set(f.id, narrator);
     const event = narrator.maybeNarrate({
@@ -625,8 +685,10 @@ function onActivity(f, m) {
       alive: f.last.alive,
       recent_behaviors: [],
     }, m.groups, Date.now());
-    agentBridge.setBrainState(f.id, narrator.brainState);
-    if (event) agentBridge.narrate(event);
+    agentBridge?.setBrainState(f.id, narrator.brainState);
+    if (event) agentBridge?.narrate(event);
+    if (bciInterface && narrator.brainState) bciInterface.observe({ agentId: f.id, tMs: m.t,
+      stateTable: narrator.brainState.state_table, pose: { pos: f.last.pos, yaw: f.last.yaw } });
   }
 }
 

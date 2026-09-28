@@ -10,6 +10,10 @@ export const MAX_ODOR_SIGMA = 1.2;
 export const MAX_ODOR_TTL_MS = 30_000;
 export const MAX_BITTER_RADIUS = 0.5;
 export const AGENT_ITEM_TTL_MS = 30_000;
+export const BCI_ACTION_DISTANCE_MIN = 0.3;
+export const BCI_ACTION_DISTANCE_MAX = 0.6;
+export const BCI_ODOR_DISTANCE = 0.45;
+export const BCI_SIDES = Object.freeze(['left', 'right', 'ahead']);
 
 const finite = (value, fallback = 0) => Number.isFinite(Number(value)) ? Number(value) : fallback;
 const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -59,6 +63,51 @@ export function validateArenaAction(action) {
     return { tool: 'remove_bitter', x: values[0], y: values[1], r: values[2] };
   }
   return nothingAction();
+}
+
+/** The deliberately smaller, pose-free tool contract used by the BCI caretaker. */
+export function validateBciAction(action) {
+  if (!isRecord(action) || typeof action.tool !== 'string') return nothingAction();
+  if (action.tool === 'nothing') return nothingAction();
+  if (action.tool === 'place_sugar') {
+    if (!ownKeys(action, new Set(['tool', 'near', 'distance', 'amount'])) || action.near !== 'fly' ||
+      !Number.isFinite(action.distance) || action.distance < BCI_ACTION_DISTANCE_MIN || action.distance > BCI_ACTION_DISTANCE_MAX ||
+      !Number.isFinite(action.amount) || action.amount <= 0 || action.amount > MAX_SUGAR_AMOUNT) return nothingAction();
+    return { tool: 'place_sugar', near: 'fly', distance: action.distance, amount: action.amount };
+  }
+  if (action.tool === 'place_odor') {
+    if (!ownKeys(action, new Set(['tool', 'near', 'side', 'odor', 'strength', 'sigma', 'ttl'])) || action.near !== 'fly' ||
+      !BCI_SIDES.includes(action.side) || !ATTRACTIVE_ODORS.includes(action.odor) ||
+      !Number.isFinite(action.strength) || action.strength < 0 || action.strength > MAX_ODOR_STRENGTH ||
+      !Number.isFinite(action.sigma) || action.sigma <= 0 || action.sigma > MAX_ODOR_SIGMA ||
+      !Number.isFinite(action.ttl) || action.ttl <= 0 || action.ttl > MAX_ODOR_TTL_MS) return nothingAction();
+    return { tool: 'place_odor', near: 'fly', side: action.side, odor: action.odor, strength: action.strength, sigma: action.sigma, ttl: action.ttl };
+  }
+  if (action.tool === 'remove_bitter') {
+    if (!ownKeys(action, new Set(['tool', 'near', 'radius'])) || action.near !== 'fly' ||
+      !Number.isFinite(action.radius) || action.radius < 0 || action.radius > MAX_BITTER_RADIUS) return nothingAction();
+    return { tool: 'remove_bitter', near: 'fly', radius: action.radius };
+  }
+  return nothingAction();
+}
+
+function bciPoint(pose, side, distance) {
+  const yaw = finite(pose?.yaw);
+  const angle = yaw + (side === 'left' ? Math.PI / 2 : side === 'right' ? -Math.PI / 2 : 0);
+  return { x: finite(pose?.pos?.[0]) + Math.cos(angle) * distance, y: finite(pose?.pos?.[1]) + Math.sin(angle) * distance };
+}
+
+/** Resolve BCI's pose-free device commands into the existing arena tool contract. */
+export function applyBciAction(inputEnv, rawAction, { pose, nowMs = 0 } = {}) {
+  const action = validateBciAction(rawAction);
+  const deviceAction = action.tool === 'place_sugar'
+    ? action
+    : action.tool === 'place_odor'
+      ? { tool: 'place_odor', odor: action.odor, ...bciPoint(pose, action.side, BCI_ODOR_DISTANCE), strength: action.strength, sigma: action.sigma, ttl: action.ttl }
+      : action.tool === 'remove_bitter'
+        ? { tool: 'remove_bitter', ...bciPoint(pose, 'ahead', BCI_ODOR_DISTANCE), r: action.radius }
+        : nothingAction();
+  return applyArenaAction(inputEnv, deviceAction, { pose, nowMs });
 }
 
 function clampToArena(x, y, radius) {

@@ -137,6 +137,7 @@ export async function runRandom({ request, random = Math.random }) {
 
 export async function runMock({ event, delayMs = 10 }) {
   await new Promise((resolve) => setTimeout(resolve, delayMs));
+  if (event?.event === 'bci') return JSON.stringify({ action: { tool: 'place_sugar', near: 'fly', distance: 0.45, amount: 1 }, text: '近くに砂糖を置くね。' });
   if (event?.event === 'request') return JSON.stringify({ action: { tool: 'place_sugar', near: 'fly', distance: 0.3, amount: 1 }, text: '近くに食べ物を出すね。' });
   const [text, valence] = MOCK_REPLIES[event?.event ?? event] ?? ['見ているよ。', 'notify'];
   return JSON.stringify({ text, valence });

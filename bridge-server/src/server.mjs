@@ -12,7 +12,7 @@ import {
   runRandom,
   runMock,
 } from './backends.mjs';
-import { nothingAction, validateArenaAction } from '../../src/agents/arenaTools.js';
+import { nothingAction, validateArenaAction, validateBciAction } from '../../src/agents/arenaTools.js';
 
 const BACKENDS = new Set(['ollama', 'claude-code', 'codex', 'mock', 'random']);
 const DEFAULT_RATE_LIMITS = Object.freeze({
@@ -91,7 +91,7 @@ function parseJsonOutput(raw) {
   return { text: normalizeReplyText(text) || '……', valence: 'notify' };
 }
 
-export function parseToolReply(raw) {
+export function parseToolReply(raw, { event = 'request' } = {}) {
   const text = typeof raw === 'string' ? raw.trim() : '';
   const candidates = [text];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
@@ -103,7 +103,7 @@ export function parseToolReply(raw) {
     try {
       const parsed = JSON.parse(candidate);
       if (isRecord(parsed) && typeof parsed.text === 'string') {
-        return { action: validateArenaAction(parsed.action), text: normalizeReplyText(parsed.text) || '環境を見ているよ。' };
+        return { action: (event === 'bci' ? validateBciAction : validateArenaAction)(parsed.action), text: normalizeReplyText(parsed.text) || '環境を見ているよ。' };
       }
     } catch {
       // Invalid backend output becomes a safe no-op.
@@ -295,8 +295,8 @@ export async function startBridgeServer(options = {}) {
       }
 
       const rawReply = await runTaskWithTimeout(task, backend === 'ollama' ? ollamaTimeoutMs : timeoutMs, killGraceMs);
-      const parsedReply = validatedEvent.event === 'request'
-        ? parseToolReply(redactSecrets(rawReply, sourceEnv))
+      const parsedReply = validatedEvent.event === 'request' || validatedEvent.event === 'bci'
+        ? parseToolReply(redactSecrets(rawReply, sourceEnv), { event: validatedEvent.event })
         : parseJsonOutput(redactSecrets(rawReply, sourceEnv));
       const replyText = redactSecrets(parsedReply.text, sourceEnv);
       const response = {
@@ -306,7 +306,7 @@ export async function startBridgeServer(options = {}) {
         text: replyText,
         latencyMs: Date.now() - startedAt,
       };
-      if (validatedEvent.event === 'request') response.action = parsedReply.action;
+      if (validatedEvent.event === 'request' || validatedEvent.event === 'bci') response.action = parsedReply.action;
       else response.valence = parsedReply.valence;
       send(ws, response);
       logCall({ id: request.id, backend: requestedBackend, event: validatedEvent.event, payload: validatedEvent, latency: Date.now() - startedAt, outcome: 'success', reply: replyText });
